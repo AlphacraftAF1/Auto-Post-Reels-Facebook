@@ -31,29 +31,31 @@ except (ValueError, TypeError):
 # --- Nama File Konfigurasi ---
 POSTED_MEDIA_FILE = 'posted_media.json'
 LAST_UPDATE_OFFSET_FILE = 'last_update_offset.txt'
+PENDING_MEDIA_FILE = 'pending_media.json' # File baru untuk antrean
 
 # --- Batasan Posting per Run ---
-MAX_POSTS_PER_RUN = 5 # Ubah nilai ini sesuai keinginan Anda (misal: 1, 2, atau 3)
+MAX_POSTS_PER_RUN = 1 # Ubah nilai ini sesuai keinginan Anda (misal: 1, 2, atau 3)
 
 # --- Fungsi Pembantu ---
-def load_posted_media():
-    """Memuat daftar media yang sudah diposting dari file JSON."""
-    if os.path.exists(POSTED_MEDIA_FILE):
-        with open(POSTED_MEDIA_FILE, 'r') as f:
+def load_json_file(file_path):
+    """Memuat data dari file JSON."""
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as f:
             try:
-                logging.info(f"Memuat media yang sudah diposting dari: {os.path.abspath(POSTED_MEDIA_FILE)}")
-                return json.load(f)
+                data = json.load(f)
+                logging.info(f"Memuat data dari: {os.path.abspath(file_path)}")
+                return data
             except json.JSONDecodeError:
-                logging.warning(f"File {POSTED_MEDIA_FILE} rusak atau kosong. Membuat yang baru.")
-                return {}
-    logging.info(f"File {POSTED_MEDIA_FILE} tidak ditemukan. Membuat yang baru.")
-    return {}
+                logging.warning(f"File {file_path} rusak atau kosong. Membuat yang baru.")
+                return [] if file_path == PENDING_MEDIA_FILE else {}
+    logging.info(f"File {file_path} tidak ditemukan. Membuat yang baru.")
+    return [] if file_path == PENDING_MEDIA_FILE else {}
 
-def save_posted_media(posted_media_data):
-    """Menyimpan daftar media yang sudah diposting ke file JSON."""
-    with open(POSTED_MEDIA_FILE, 'w') as f:
-        json.dump(posted_media_data, f, indent=4)
-    logging.info(f"Media yang sudah diposting disimpan ke: {os.path.abspath(POSTED_MEDIA_FILE)}")
+def save_json_file(file_path, data):
+    """Menyimpan data ke file JSON."""
+    with open(file_path, 'w') as f:
+        json.dump(data, f, indent=4)
+    logging.info(f"Data disimpan ke: {os.path.abspath(file_path)}")
 
 def load_last_update_offset():
     """Memuat offset update terakhir dari file teks."""
@@ -99,60 +101,78 @@ def run_autopost():
     logging.info("Memulai siklus AutoPost Facebook Reels...")
     send_telegram_notification("🚀 Memulai siklus AutoPost Facebook Reels...")
 
-    posted_media = load_posted_media()
+    posted_media = load_json_file(POSTED_MEDIA_FILE) # Dictionary
+    pending_media_queue = load_json_file(PENDING_MEDIA_FILE) # List
     last_offset = load_last_update_offset()
 
     try:
+        # 1. Ambil media baru dari Telegram dan tambahkan ke antrean
         logging.info(f"Mengambil media terbaru dari Telegram (offset: {last_offset})...")
-        # Ambil hingga 50 update dari Telegram
-        new_media_updates, new_last_offset = telegram_fetcher.fetch_new_media(
+        new_updates_from_telegram, new_max_offset_seen = telegram_fetcher.fetch_new_media(
             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, last_offset, posted_media
         )
 
-        if not new_media_updates:
-            logging.info("Tidak ada media baru yang ditemukan untuk diposting.")
-            send_telegram_notification("ℹ️ Tidak ada media baru yang ditemukan untuk diposting.")
-            save_last_update_offset(new_last_offset) # Simpan offset terbaru meskipun tidak ada media
+        if new_updates_from_telegram:
+            logging.info(f"Ditemukan {len(new_updates_from_telegram)} update baru dari Telegram.")
+            # Tambahkan media baru ke antrean jika belum ada di posted_media atau pending_media
+            pending_unique_ids = {item['file_unique_id'] for item in pending_media_queue}
+            for media_info in new_updates_from_telegram:
+                file_unique_id = media_info['file_unique_id']
+                if file_unique_id not in posted_media and file_unique_id not in pending_unique_ids:
+                    pending_media_queue.append(media_info)
+                    pending_unique_ids.add(file_unique_id) # Tambahkan ke set lokal untuk cek cepat
+                    logging.info(f"Menambahkan media {file_unique_id} ke antrean.")
+                else:
+                    logging.info(f"Media {file_unique_id} sudah ada di posted_media atau antrean. Melewatkan.")
+            save_json_file(PENDING_MEDIA_FILE, pending_media_queue)
+        else:
+            logging.info("Tidak ada update baru dari Telegram untuk ditambahkan ke antrean.")
+
+        # Selalu update offset terakhir ke update_id tertinggi yang pernah dilihat dari Telegram
+        # Ini mencegah pengambilan ulang update lama dari Telegram API
+        save_last_update_offset(new_max_offset_seen)
+
+        # 2. Proses media dari antrean (terbaru ke terlama)
+        if not pending_media_queue:
+            logging.info("Antrean media kosong. Tidak ada yang perlu diposting.")
+            send_telegram_notification("ℹ️ Antrean media kosong. Tidak ada yang perlu diposting.")
+            send_telegram_notification("✅ Siklus AutoPost Facebook Reels selesai.")
             return
 
-        logging.info(f"Ditemukan {len(new_media_updates)} media baru yang potensial untuk diproses.")
+        # Urutkan antrean dari yang terbaru ke terlama (v5, v4, v3...)
+        pending_media_queue.sort(key=lambda x: x['update_id'], reverse=True)
         
-        # --- OPSI PENGURUTAN MEDIA ---
-        # Pilih salah satu dari dua opsi di bawah, atau hapus keduanya jika Anda ingin
-        # memproses media sesuai urutan yang dikembalikan oleh Telegram_fetcher (terbaru ke terlama).
+        media_to_process_this_run = pending_media_queue[:MAX_POSTS_PER_RUN]
+        logging.info(f"Memproses {len(media_to_process_this_run)} media dari antrean (total {len(pending_media_queue)} di antrean).")
+        send_telegram_notification(f"⏳ Akan memproses {len(media_to_process_this_run)} media dari antrean.")
 
-        # OPSI 1: Prioritaskan Foto, lalu Reels, lalu Video Reguler (seperti sebelumnya)
-        # Ini akan mengurutkan ulang media yang baru ditemukan berdasarkan jenisnya.
-        # Jika MAX_POSTS_PER_RUN = 1, ini akan memproses foto terbaru terlebih dahulu.
-        new_media_updates.sort(key=lambda x: (
-            0 if x['type'] == 'photo' else # Foto memiliki prioritas tertinggi (0)
-            1 if x['type'] == 'video' and video_utils.is_reel(x['file_path']) else # Reels (video) prioritas kedua (1)
-            2 # Video reguler prioritas terendah (2)
-        ))
+        processed_ids_this_run = [] # Untuk melacak media yang berhasil/gagal diproses di run ini
 
-        # OPSI 2 (Alternatif): Jika Anda ingin memproses media yang *paling baru* dari Telegram
-        # secara mutlak (berdasarkan update_id), tanpa memandang jenisnya, dan MAX_POSTS_PER_RUN = 1,
-        # maka HAPUS blok OPSI 1 di atas. Telegram_fetcher sudah mengembalikan media terbaru duluan.
-        # new_media_updates = new_media_updates # Tidak perlu pengurutan tambahan jika telegram_fetcher sudah mengurutkan DESC
-
-        # Batasi jumlah media yang akan diproses per run
-        media_to_process = new_media_updates[:MAX_POSTS_PER_RUN]
-        logging.info(f"Memproses {len(media_to_process)} media dari total {len(new_media_updates)} media baru yang tersedia.")
-        send_telegram_notification(f"⏳ Akan memproses {len(media_to_process)} media baru.")
-
-        for media_info in media_to_process:
+        for media_info in media_to_process_this_run:
             file_unique_id = media_info['file_unique_id']
             media_path = media_info['file_path']
             original_caption = media_info.get('caption', '')
             media_type = media_info['type'] # 'video' atau 'photo'
 
-            logging.info(f"Memproses media: {media_path} (ID Unik: {file_unique_id})")
+            logging.info(f"Memproses media: {media_path} (ID Unik: {file_unique_id}) dari antrean.")
 
             post_status = 'failed_upload' # Default status jika terjadi kesalahan
             post_id = None
             processed_caption = ""
 
             try:
+                # Unduh file lagi karena file lokal mungkin sudah dihapus
+                # (Ini penting jika bot crash atau file dihapus sebelum diproses dari antrean)
+                if not os.path.exists(media_path):
+                    logging.info(f"File lokal {media_path} tidak ditemukan, mencoba mengunduh ulang.")
+                    redownloaded_path = telegram_fetcher.download_telegram_file(
+                        TELEGRAM_BOT_TOKEN, media_info['file_id'], file_unique_id, media_type
+                    )
+                    if redownloaded_path:
+                        media_path = redownloaded_path
+                    else:
+                        raise Exception(f"Gagal mengunduh ulang media {file_unique_id}.")
+
                 # 3. Cek Caption (Kosong / Spam / Siap Posting)
                 logging.info("Memproses caption...")
                 processed_caption = gemini_processor.process_caption(original_caption, GEMINI_API_KEY)
@@ -162,8 +182,6 @@ def run_autopost():
                 is_reel = False
                 if media_type == 'video':
                     logging.info("Menganalisis video untuk deteksi Reels...")
-                    # Panggil is_reel lagi karena pengurutan di atas hanya untuk menentukan prioritas,
-                    # dan is_reel mungkin perlu membaca file lagi untuk memastikan.
                     is_reel = video_utils.is_reel(media_path)
                     if is_reel:
                         logging.info("Video dideteksi sebagai Reels.")
@@ -202,7 +220,7 @@ def run_autopost():
                     send_telegram_notification(
                         f"❌ Gagal posting ke Facebook untuk media ID unik: {file_unique_id}. Post ID tidak ditemukan."
                     )
-                    post_status = 'failed_upload' # Pastikan status diatur jika post_id None
+                    post_status = 'failed_upload'
 
             except Exception as e:
                 logging.error(f"Terjadi kesalahan saat mengunggah media {file_unique_id}: {e}", exc_info=True)
@@ -210,29 +228,32 @@ def run_autopost():
                     f"❌ Terjadi kesalahan saat posting ke Facebook untuk media ID unik: {file_unique_id}.\n"
                     f"Kesalahan: {str(e)[:200]}..."
                 )
-                post_status = 'failed_upload' # Pastikan status diatur jika ada exception
+                post_status = 'failed_upload'
             finally:
-                # Simpan ke posted_media.json setelah setiap upaya pemrosesan (berhasil atau gagal)
+                # Tambahkan ke posted_media (terlepas dari sukses/gagal)
                 posted_media[file_unique_id] = {
                     'caption': processed_caption,
                     'post_id': post_id,
                     'posted_at': datetime.now().isoformat(),
                     'media_type': media_type,
-                    'is_reel': is_reel if media_type == 'video' else False, # Hanya relevan untuk video
-                    'status': post_status # Tambahkan status
+                    'is_reel': is_reel if media_type == 'video' else False,
+                    'status': post_status
                 }
-                save_posted_media(posted_media) # Simpan setelah setiap media diproses
+                save_json_file(POSTED_MEDIA_FILE, posted_media)
+                
+                # Tandai ID sebagai diproses di run ini agar bisa dihapus dari antrean
+                processed_ids_this_run.append(file_unique_id)
 
                 # 6. Cleanup: Hapus file lokal setelah selesai
                 if os.path.exists(media_path):
                     os.remove(media_path)
                     logging.info(f"File lokal dihapus: {media_path}")
 
-        # Simpan offset update_id terakhir
-        # Offset terakhir harus selalu yang paling tinggi dari semua update yang ditemukan,
-        # bahkan jika tidak semua diproses, agar tidak mengulang update yang sama di run berikutnya.
-        save_last_update_offset(new_last_offset) 
-        logging.info(f"Siklus AutoPost selesai. Offset update terakhir disimpan: {new_last_offset}")
+        # Hapus media yang berhasil/gagal diproses dari antrean
+        pending_media_queue = [item for item in pending_media_queue if item['file_unique_id'] not in processed_ids_this_run]
+        save_json_file(PENDING_MEDIA_FILE, pending_media_queue)
+
+        logging.info(f"Siklus AutoPost selesai. Offset update terakhir disimpan: {new_max_offset_seen}")
         send_telegram_notification("✅ Siklus AutoPost Facebook Reels selesai.")
 
     except Exception as e:
