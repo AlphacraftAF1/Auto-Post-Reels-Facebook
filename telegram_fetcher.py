@@ -50,7 +50,7 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
 
         # Urutkan update dari yang paling baru ke yang paling lama (reverse=True)
         # Ini memastikan bahwa media terbaru yang diforward akan diproses duluan
-        updates.sort(key=lambda u: u['update_id'], reverse=False)
+        updates.sort(key=lambda u: u['update_id'], reverse=True)
 
         for update in updates:
             current_max_offset = max(current_max_offset, update['update_id'])
