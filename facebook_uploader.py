@@ -15,7 +15,7 @@ def _log_error_response(e):
         except json.JSONDecodeError:
             logging.error(f"Respon Error Facebook (non-JSON): {e.response.text}")
     else:
-        logging.error(f"Tidak ada detail respon dari Facebook.")
+        logging.error("Tidak ada detail respon dari Facebook.")
 
 def upload_photo(file_path, caption, access_token, page_id):
     """
@@ -38,7 +38,7 @@ def upload_photo(file_path, caption, access_token, page_id):
             files = {'source': f}
             logging.info(f"Mengunggah foto: {file_path} dengan caption: {caption[:50]}...")
             response = requests.post(url, params=params, files=files, timeout=120)
-            response.raise_for_status() # Angkat HTTPError untuk kode status 4xx/5xx
+            response.raise_for_status()
             
             result = response.json()
             post_id = result.get('id')
@@ -69,15 +69,15 @@ def upload_video(file_path, caption, access_token, page_id):
 
     params = {
         'access_token': access_token,
-        'description': caption, # Untuk video reguler, gunakan 'description' bukan 'caption'
-        'title': caption[:50] # Gunakan sebagian caption sebagai judul
+        'description': caption,
+        'title': caption[:50]
     }
     
     try:
         with open(file_path, 'rb') as f:
             files = {'source': f}
             logging.info(f"Mengunggah video reguler: {file_path} dengan deskripsi: {caption[:50]}...")
-            response = requests.post(url, params=params, files=files, timeout=300) # Timeout lebih lama untuk video
+            response = requests.post(url, params=params, files=files, timeout=300)
             response.raise_for_status()
             
             result = response.json()
@@ -133,13 +133,11 @@ def upload_reel(file_path, caption, access_token, page_id):
         # Langkah 2: Transfer video (upload_phase=transfer)
         logging.info("Memulai fase upload Reels (transfer)...")
         with open(file_path, 'rb') as f:
-            # PENTING: Mengubah requests.post menjadi requests.put dan menambahkan header 'Offset'
             headers = {
-                'Content-Type': 'application/octet-stream', # Tipe konten biner
-                'Offset': '0' # Offset awal untuk upload resumable
+                'Content-Type': 'application/octet-stream',
+                'Offset': '0'
             }
-            # Menggunakan requests.put untuk upload ke upload_url
-            transfer_response = requests.put(upload_url, data=f, headers=headers, timeout=300) # Timeout lebih lama
+            transfer_response = requests.put(upload_url, data=f, headers=headers, timeout=300)
             transfer_response.raise_for_status()
         
         logging.info("Fase transfer berhasil.")
@@ -149,8 +147,8 @@ def upload_reel(file_path, caption, access_token, page_id):
             'access_token': access_token,
             'upload_phase': 'finish',
             'video_id': video_id,
-            'description': caption, # Untuk Reels, gunakan 'description'
-            'title': caption[:50] # Gunakan sebagian caption sebagai judul
+            'description': caption,
+            'title': caption[:50]
         }
         
         logging.info("Memulai fase upload Reels (finish)...")
@@ -168,7 +166,7 @@ def upload_reel(file_path, caption, access_token, page_id):
 
     except requests.exceptions.RequestException as e:
         logging.error(f"Kesalahan saat mengunggah Reels: {e}")
-        _log_error_response(e) # Panggil fungsi pembantu untuk detail error
+        _log_error_response(e)
         return None
     except Exception as e:
         logging.error(f"Terjadi kesalahan tak terduga saat mengunggah Reels: {e}", exc_info=True)
@@ -180,29 +178,9 @@ if __name__ == '__main__':
     TEST_FB_ACCESS_TOKEN = os.getenv('FB_ACCESS_TOKEN_TEST', 'YOUR_FB_ACCESS_TOKEN_HERE')
     TEST_FB_PAGE_ID = os.getenv('FB_PAGE_ID_TEST', 'YOUR_FB_PAGE_ID_HERE')
     
-    # Buat file dummy untuk pengujian (ini hanya placeholder, Anda perlu file asli)
     test_photo_path = 'test_photo.jpg'
     test_video_path = 'test_video.mp4'
-    test_reel_path = 'test_reel_upload.mp4' # Pastikan ini adalah video 9:16 dan <= 60s
-    
-    # Buat file dummy jika tidak ada (hanya untuk mencegah error FileNotFoundError)
-    # Dalam penggunaan nyata, file ini akan diunduh dari Telegram
-    if not os.path.exists(test_photo_path):
-        logging.warning(f"File '{test_photo_path}' tidak ditemukan. Buat file foto dummy untuk pengujian.")
-        # from PIL import Image
-        # img = Image.new('RGB', (60, 30), color = 'red')
-        # img.save(test_photo_path)
-    
-    if not os.path.exists(test_video_path):
-        logging.warning(f"File '{test_video_path}' tidak ditemukan. Buat file video dummy untuk pengujian.")
-        # Anda bisa membuat file dummy kosong atau mengunduh video kecil
-        # with open(test_video_path, 'w') as f:
-        #     f.write("dummy video content")
-
-    if not os.path.exists(test_reel_path):
-        logging.warning(f"File '{test_reel_path}' tidak ditemukan. Buat file video dummy untuk pengujian Reels.")
-        # with open(test_reel_path, 'w') as f:
-        #     f.write("dummy video content")
+    test_reel_path = 'test_reel_upload.mp4'  # Pastikan ini adalah video 9:16 dan <= 60s
 
     if TEST_FB_ACCESS_TOKEN == 'YOUR_FB_ACCESS_TOKEN_HERE' or TEST_FB_PAGE_ID == 'YOUR_FB_PAGE_ID_HERE':
         logging.warning("Variabel lingkungan FB_ACCESS_TOKEN_TEST atau FB_PAGE_ID_TEST tidak diatur. Tidak dapat menjalankan contoh Facebook Uploader.")
