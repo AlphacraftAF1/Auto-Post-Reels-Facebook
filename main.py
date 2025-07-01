@@ -33,7 +33,7 @@ POSTED_MEDIA_FILE = 'posted_media.json'
 LAST_UPDATE_OFFSET_FILE = 'last_update_offset.txt'
 
 # --- Batasan Posting per Run ---
-MAX_POSTS_PER_RUN = 3 # Ubah nilai ini sesuai keinginan Anda (misal: 1, 2, atau 3)
+MAX_POSTS_PER_RUN = 1 # Ubah nilai ini sesuai keinginan Anda (misal: 1, 2, atau 3)
 
 # --- Fungsi Pembantu ---
 def load_posted_media():
