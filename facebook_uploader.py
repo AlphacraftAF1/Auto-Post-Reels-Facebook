@@ -133,12 +133,13 @@ def upload_reel(file_path, caption, access_token, page_id):
         # Langkah 2: Transfer video (upload_phase=transfer)
         logging.info("Memulai fase upload Reels (transfer)...")
         with open(file_path, 'rb') as f:
+            # PENTING: Mengubah requests.post menjadi requests.put dan menambahkan header 'Offset'
             headers = {
-                'Authorization': f'OAuth {access_token}',
-                'Content-Type': 'application/octet-stream' # Penting: Tentukan tipe konten
+                'Content-Type': 'application/octet-stream', # Tipe konten biner
+                'Offset': '0' # Offset awal untuk upload resumable
             }
-            # Gunakan requests.post langsung ke upload_url
-            transfer_response = requests.post(upload_url, data=f, headers=headers, timeout=300) # Timeout lebih lama
+            # Menggunakan requests.put untuk upload ke upload_url
+            transfer_response = requests.put(upload_url, data=f, headers=headers, timeout=300) # Timeout lebih lama
             transfer_response.raise_for_status()
         
         logging.info("Fase transfer berhasil.")
