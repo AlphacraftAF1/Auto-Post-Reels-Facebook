@@ -40,12 +40,14 @@ def process_caption(original_caption, gemini_api_key):
         return random.choice(FALLBACK_CAPTIONS)
 
     # Prompt untuk Gemini API
+    # Menambahkan instruksi eksplisit untuk tagar Reels/Shorts
     prompt = (
         f"Saya memiliki caption berikut dari sebuah video atau foto yang akan diposting ke Facebook Reels:\n\n"
         f"'{original_caption}'\n\n"
         f"Tolong bersihkan caption ini dari informasi yang tidak relevan (seperti ID internal, URL yang tidak perlu, atau teks sistem), "
         f"dan buatlah lebih menarik, lucu, atau relevan untuk audiens Facebook Reels. "
-        f"Tambahkan emoji yang sesuai. Pastikan caption tidak terlalu panjang (maksimal 200 karakter). "
+        f"Tambahkan emoji yang sesuai. Untuk video, sertakan tagar seperti #Reels, #Shorts, #VideoPendek, atau #KontenLucu. "
+        f"Pastikan caption tidak terlalu panjang (maksimal 200 karakter). "
         f"Jika caption sudah bagus, cukup sempurnakan sedikit. "
         f"Berikan hanya caption yang sudah diproses, tanpa tambahan teks atau penjelasan."
     )
