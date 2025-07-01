@@ -25,7 +25,7 @@ def send_message(bot_token, chat_id, text):
 def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
     """
     Mengambil update terbaru dari Telegram, mengunduh media, dan mengembalikan informasinya.
-    Mengabaikan media yang sudah diposting.
+    Mengabaikan media yang sudah diposting atau duplikat dalam batch yang sama.
     """
     url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
     params = {
@@ -36,6 +36,7 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
     
     new_media_updates = []
     current_max_offset = last_offset
+    processed_unique_ids_in_batch = set() # Melacak ID unik dalam batch ini untuk menghindari duplikasi
 
     try:
         response = requests.get(url, params=params, timeout=40)
@@ -89,9 +90,14 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
                 logging.debug(f"Melewatkan pesan tanpa video atau foto (ID Update: {update['update_id']}).")
                 continue
 
-            # Cek apakah media ini sudah diposting sebelumnya
+            # Cek apakah media ini sudah diposting sebelumnya (dari file)
             if file_unique_id in posted_media_ids:
-                logging.info(f"Media (ID Unik: {file_unique_id}) sudah diposting. Melewatkan.")
+                logging.info(f"Media (ID Unik: {file_unique_id}) sudah diposting sebelumnya. Melewatkan.")
+                continue
+            
+            # Cek apakah media ini sudah diproses dalam batch getUpdates saat ini
+            if file_unique_id in processed_unique_ids_in_batch:
+                logging.info(f"Media (ID Unik: {file_unique_id}) adalah duplikat dalam batch ini. Melewatkan.")
                 continue
 
             # Unduh media
@@ -109,6 +115,7 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
                     'duration': duration
                 }
                 new_media_updates.append(media_info)
+                processed_unique_ids_in_batch.add(file_unique_id) # Tambahkan ke set untuk melacak duplikasi dalam batch
             else:
                 logging.error(f"Gagal mengunduh media {file_unique_id}.")
 
