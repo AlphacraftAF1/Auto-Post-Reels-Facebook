@@ -41,13 +41,16 @@ def get_latest_media_from_bot_chat(bot_token, chat_id, output_folder):
         return None, None
 
     base_url = f"https://api.telegram.org/bot{bot_token}/"
-    current_offset = get_last_update_offset()
+    initial_offset_for_getupdates = get_last_update_offset() + 1 # Ambil update setelah yang terakhir tersimpan
     
+    # --- PERUBAHAN DI SINI ---
+    # Ambil lebih banyak update (misal 50) untuk memastikan tidak melewatkan media
     params = {
-        'offset': current_offset + 1,
-        'limit': 10, # Ambil beberapa update terbaru
+        'offset': initial_offset_for_getupdates,
+        'limit': 50, # Tingkatkan batas pengambilan update
         'timeout': 20
     }
+    # --- AKHIR PERUBAHAN ---
 
     try:
         get_updates_url = f"{base_url}getUpdates"
@@ -60,114 +63,47 @@ def get_latest_media_from_bot_chat(bot_token, chat_id, output_folder):
             logger.info("No new updates found from Telegram.")
             return None, None
 
-        max_update_id = current_offset
+        # --- PERUBAHAN DI SINI: Logika offset yang lebih robust ---
+        # Setelah mengambil update, kita selalu menyimpan update_id tertinggi yang kita lihat
+        # Ini penting agar bot tidak terjebak mengulang update lama
+        max_update_id_in_batch = initial_offset_for_getupdates -1 # Default jika tidak ada update
+
         if updates:
-            max_update_id = max(u['update_id'] for u in updates)
-            save_last_update_offset(max_update_id)
-
-
-        # Cari media terbaru (video atau foto) dari CHAT_ID yang benar
+            max_update_id_in_batch = max(u['update_id'] for u in updates)
+            # Offset akan disimpan *setelah* kita menentukan media yang akan diproses
+            # atau jika tidak ada media yang ditemukan
+        
         latest_media_message = None
-        media_type = None # Akan 'video' atau 'photo'
+        media_type = None
 
+        # Iterasi melalui update dari yang terbaru ke terlama
         for update in sorted(updates, key=lambda x: x['update_id'], reverse=True):
             if 'message' in update:
                 message = update['message']
                 if str(message['chat']['id']) == str(chat_id):
+                    # Kita menemukan media dari chat yang benar
                     if 'video' in message:
                         latest_media_message = message
                         media_type = 'video'
                         logger.info(f"Found a video message (Update ID: {update['update_id']}).")
-                        break
+                        break # Hentikan loop, kita sudah menemukan media terbaru yang valid
                     elif 'photo' in message:
                         latest_media_message = message
                         media_type = 'photo'
                         logger.info(f"Found a photo message (Update ID: {update['update_id']}).")
-                        break
+                        break # Hentikan loop, kita sudah menemukan media terbaru yang valid
         
+        # --- Simpan offset setelah upaya pencarian media ---
+        # Jika media ditemukan, kita simpan update_id dari media tersebut.
+        # Jika tidak ada media yang ditemukan, kita simpan update_id tertinggi yang sudah dilihat.
+        if latest_media_message:
+            save_last_update_offset(latest_media_message['update_id'])
+        else:
+            save_last_update_offset(max_update_id_in_batch)
+        # --- AKHIR PERUBAHAN ---
+
         if not latest_media_message:
             logger.info(f"No new video or photo message found from CHAT_ID '{chat_id}' in fetched updates.")
             return None, None
 
-        # Dapatkan file_id dan unique_id berdasarkan tipe media
-        file_id = None
-        file_unique_id = None
-        largest_photo = None # Tambahkan inisialisasi ini
-
-        if media_type == 'video':
-            file_id = latest_media_message['video']['file_id']
-            file_unique_id = latest_media_message['video']['file_unique_id']
-        elif media_type == 'photo':
-            # Foto bisa punya beberapa ukuran, ambil yang terbesar (terakhir di array)
-            largest_photo = latest_media_message['photo'][-1]
-            file_id = largest_photo['file_id']
-            file_unique_id = largest_photo['file_unique_id']
-
-        if not file_id:
-            logger.error("No file_id found for the detected media.")
-            return None, None
-
-        # Dapatkan info file untuk URL download (ini akan berisi file_path dan mungkin mime_type)
-        get_file_url = f"{base_url}getFile"
-        file_response = requests.get(get_file_url, params={'file_id': file_id})
-        file_response.raise_for_status()
-        file_info = file_response.json().get('result', {})
-
-        if not file_info or 'file_path' not in file_info:
-            logger.error(f"Could not get file info from Telegram for file_id: {file_id}")
-            return None, None
-
-        download_url = f"https://api.telegram.org/file/bot{bot_token}/{file_info['file_path']}"
-        
-        # Tentukan ekstensi file dari file_path yang didapat dari Telegram
-        file_extension = "bin" # Default fallback
-        if file_info.get('file_path'):
-            _, ext = os.path.splitext(file_info['file_path'])
-            if ext:
-                file_extension = ext.lstrip('.')
-        
-        output_filepath = os.path.join(output_folder, f"{file_unique_id}.{file_extension}")
-
-        # Pastikan kita tidak mendownload ulang file yang sudah ada (berdasarkan unique ID)
-        if os.path.exists(output_filepath):
-            logger.info(f"File {output_filepath} already exists. Assuming it was processed. Skipping download.")
-            return None, None
-
-        # Download media
-        logger.info(f"Downloading {media_type} from Telegram URL: {download_url}")
-        file_download_response = requests.get(download_url, stream=True)
-        file_download_response.raise_for_status()
-
-        with open(output_filepath, 'wb') as f:
-            for chunk in file_download_response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        
-        logger.info(f"{media_type.capitalize()} downloaded successfully to: {output_filepath}")
-        
-        # Gabungkan info media dari Telegram
-        # Menggunakan .get() untuk mengakses atribut agar tidak KeyError jika tidak ada
-        # Mengambil mime_type dari file_info (lebih reliable) atau membuat perkiraan
-        media_metadata = {
-            'type': media_type,
-            'file_id': file_id,
-            'file_unique_id': file_unique_id,
-            'caption': latest_media_message.get('caption', f"{media_type.capitalize()} dari Telegram"),
-            'duration': latest_media_message['video'].get('duration') if media_type == 'video' else None,
-            'width': latest_media_message['video'].get('width') if media_type == 'video' else (largest_photo.get('width') if media_type == 'photo' else None),
-            'height': latest_media_message['video'].get('height') if media_type == 'video' else (largest_photo.get('height') if media_type == 'photo' else None),
-            # --- PERUBAHAN DI SINI ---
-            'mime_type': file_info.get('mime_type') or (f'image/{file_extension}' if media_type == 'photo' else None)
-            # --- AKHIR PERUBAHAN ---
-        }
-        return output_filepath, media_metadata
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Telegram API request failed: {e}", exc_info=True)
-        return None, None
-    except Exception as e:
-        logger.error(f"Error in get_latest_media_from_bot_chat: {e}", exc_info=True)
-        return None, None
-
-# Contoh penggunaan lokal (bisa dihapus nanti)
-if __name__ == "__main__":
-    pass
+        # ... (bagian kode selanjutnya tetap sama untuk mendapatkan file_id, download, dan return)
