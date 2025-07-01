@@ -32,6 +32,9 @@ except (ValueError, TypeError):
 POSTED_MEDIA_FILE = 'posted_media.json'
 LAST_UPDATE_OFFSET_FILE = 'last_update_offset.txt'
 
+# --- Batasan Posting per Run ---
+MAX_POSTS_PER_RUN = 1 # Ubah nilai ini sesuai keinginan Anda (misal: 1, 2, atau 3)
+
 # --- Fungsi Pembantu ---
 def load_posted_media():
     """Memuat daftar media yang sudah diposting dari file JSON."""
@@ -105,9 +108,14 @@ def run_autopost():
             save_last_update_offset(new_last_offset) # Simpan offset terbaru meskipun tidak ada media
             return
 
-        logging.info(f"Ditemukan {len(new_media_updates)} media baru untuk diproses.")
+        logging.info(f"Ditemukan {len(new_media_updates)} media baru yang potensial untuk diproses.")
+        
+        # Batasi jumlah media yang akan diproses per run
+        media_to_process = new_media_updates[:MAX_POSTS_PER_RUN]
+        logging.info(f"Memproses {len(media_to_process)} media dari total {len(new_media_updates)} media baru yang tersedia.")
+        send_telegram_notification(f"⏳ Akan memproses {len(media_to_process)} media baru.")
 
-        for media_info in new_media_updates:
+        for media_info in media_to_process:
             file_unique_id = media_info['file_unique_id']
             media_path = media_info['file_path']
             original_caption = media_info.get('caption', '')
@@ -165,7 +173,7 @@ def run_autopost():
                         'media_type': media_type,
                         'is_reel': is_reel
                     }
-                    save_posted_media(posted_media)
+                    save_posted_media(posted_media) # Simpan setelah setiap sukses posting
                 else:
                     logging.error("Gagal mendapatkan Post ID setelah unggah.")
                     send_telegram_notification(
@@ -173,7 +181,7 @@ def run_autopost():
                     )
 
             except Exception as e:
-                logging.error(f"Terjadi kesalahan saat mengunggah media {file_unique_id}: {e}")
+                logging.error(f"Terjadi kesalahan saat mengunggah media {file_unique_id}: {e}", exc_info=True)
                 send_telegram_notification(
                     f"❌ Gagal posting ke Facebook untuk media ID unik: {file_unique_id}.\n"
                     f"Kesalahan: {str(e)[:200]}..."
@@ -185,7 +193,9 @@ def run_autopost():
                     logging.info(f"File lokal dihapus: {media_path}")
 
         # Simpan offset update_id terakhir
-        save_last_update_offset(new_last_offset)
+        # Offset terakhir harus selalu yang paling tinggi dari semua update yang ditemukan,
+        # bahkan jika tidak semua diproses, agar tidak mengulang update yang sama di run berikutnya.
+        save_last_update_offset(new_last_offset) 
         logging.info(f"Siklus AutoPost selesai. Offset update terakhir disimpan: {new_last_offset}")
         send_telegram_notification("✅ Siklus AutoPost Facebook Reels selesai.")
 
