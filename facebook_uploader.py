@@ -6,6 +6,17 @@ import json
 # Konfigurasi logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+def _log_error_response(e):
+    """Fungsi pembantu untuk mencatat detail respons error HTTP."""
+    if hasattr(e, 'response') and e.response is not None:
+        try:
+            error_details = e.response.json()
+            logging.error(f"Detail Error Respon Facebook: {json.dumps(error_details, indent=2)}")
+        except json.JSONDecodeError:
+            logging.error(f"Respon Error Facebook (non-JSON): {e.response.text}")
+    else:
+        logging.error(f"Tidak ada detail respon dari Facebook.")
+
 def upload_photo(file_path, caption, access_token, page_id):
     """
     Mengunggah foto ke halaman Facebook.
@@ -38,7 +49,8 @@ def upload_photo(file_path, caption, access_token, page_id):
                 logging.error(f"Gagal mengunggah foto. Respon: {result}")
                 return None
     except requests.exceptions.RequestException as e:
-        logging.error(f"Kesalahan saat mengunggah foto: {e}. Respon: {getattr(e, 'response', None).text if getattr(e, 'response', None) else 'Tidak ada respon.'}")
+        logging.error(f"Kesalahan saat mengunggah foto: {e}")
+        _log_error_response(e)
         return None
     except Exception as e:
         logging.error(f"Terjadi kesalahan tak terduga saat mengunggah foto: {e}", exc_info=True)
@@ -77,7 +89,8 @@ def upload_video(file_path, caption, access_token, page_id):
                 logging.error(f"Gagal mengunggah video reguler. Respon: {result}")
                 return None
     except requests.exceptions.RequestException as e:
-        logging.error(f"Kesalahan saat mengunggah video reguler: {e}. Respon: {getattr(e, 'response', None).text if getattr(e, 'response', None) else 'Tidak ada respon.'}")
+        logging.error(f"Kesalahan saat mengunggah video reguler: {e}")
+        _log_error_response(e)
         return None
     except Exception as e:
         logging.error(f"Terjadi kesalahan tak terduga saat mengunggah video reguler: {e}", exc_info=True)
@@ -122,7 +135,7 @@ def upload_reel(file_path, caption, access_token, page_id):
         with open(file_path, 'rb') as f:
             headers = {
                 'Authorization': f'OAuth {access_token}',
-                'Content-Type': 'application/octet-stream'
+                'Content-Type': 'application/octet-stream' # Penting: Tentukan tipe konten
             }
             # Gunakan requests.post langsung ke upload_url
             transfer_response = requests.post(upload_url, data=f, headers=headers, timeout=300) # Timeout lebih lama
@@ -153,7 +166,8 @@ def upload_reel(file_path, caption, access_token, page_id):
             return None
 
     except requests.exceptions.RequestException as e:
-        logging.error(f"Kesalahan saat mengunggah Reels: {e}. Respon: {getattr(e, 'response', None).text if getattr(e, 'response', None) else 'Tidak ada respon.'}")
+        logging.error(f"Kesalahan saat mengunggah Reels: {e}")
+        _log_error_response(e) # Panggil fungsi pembantu untuk detail error
         return None
     except Exception as e:
         logging.error(f"Terjadi kesalahan tak terduga saat mengunggah Reels: {e}", exc_info=True)
