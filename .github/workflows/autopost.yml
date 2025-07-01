@@ -35,7 +35,7 @@ jobs:
         touch last_update_offset.txt # Buat file kosong jika belum ada
         touch pending_media.json # Pastikan pending_media.json juga ada
 
-    - name: Debug: List files before script # Menampilkan daftar file sebelum main.py berjalan
+    - name: List files before script # Menampilkan daftar file sebelum main.py berjalan
       run: |
         echo "Files before main.py runs:"
         ls -la
