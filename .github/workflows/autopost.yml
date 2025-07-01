@@ -27,6 +27,12 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y ffmpeg
 
+    - name: Download previous artifacts # Mengunduh file persistensi dari run sebelumnya
+      uses: actions/download-artifact@v4
+      with:
+        name: autopost-data # Nama artifact yang sama dengan yang diunggah
+        path: . # Mengunduh ke direktori root repositori
+
     - name: Run AutoPost Script # Menjalankan skrip utama
       env: # Mengatur variabel lingkungan dari GitHub Secrets
         FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
@@ -36,3 +42,12 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
         python main.py
+
+    - name: Upload artifacts # Mengunggah file persistensi untuk run berikutnya
+      uses: actions/upload-artifact@v4
+      with:
+        name: autopost-data # Nama artifact
+        path: |
+          posted_media.json
+          last_update_offset.txt
+        retention-days: 7 # Opsional: Berapa lama artifact akan disimpan (default 90 hari)
