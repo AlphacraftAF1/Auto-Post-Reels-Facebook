@@ -25,8 +25,8 @@ def process_caption_with_gemini(raw_caption, media_type="media"):
         return raw_caption if raw_caption else f"{media_type.capitalize()} dari Telegram Bot"
 
 
-    # --- PERUBAHAN DI SINI: Ubah model menjadi 'gemini-2.0-flash' ---
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    # --- PERUBAHAN DI SINI: Ubah model menjadi 'gemini-1.5-flash-latest' ---
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
     # --- AKHIR PERUBAHAN ---
 
     # Tentukan bagian prompt untuk caption input
