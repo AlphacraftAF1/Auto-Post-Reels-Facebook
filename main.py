@@ -2,15 +2,14 @@
 import os
 import logging
 import time
-
-import asyncio # Masih dibutuhkan untuk asyncio.run() di akhir
+import asyncio
+import random # <-- Pastikan modul random ada
 
 from telegram_fetcher import get_latest_media_from_bot_chat
 from video_utils import validate_video, get_video_duration
 from facebook_uploader import upload_reel, upload_regular_video, upload_photo
 from telegram_notify import send_telegram
-from gemini_processor import process_caption_with_gemini # Import tetap sama
-
+from gemini_processor import process_caption_with_gemini # Import tetap ada, hanya dipanggil di kondisi tertentu
 
 # Konfigurasi
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -21,8 +20,17 @@ VIDEO_FOLDER = "videos"
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# --- DAFTAR CAPTION EMOTE + HASHTAG UNTUK FALLBACK ---
+GENERIC_EMOJI_HASHTAG_CAPTIONS = [
+    "😂 #lucu #ngakak #viral",
+    "✨ #momenindah #inspirasi #foryou",
+    "😄 #hiburan #senyum #kocak",
+    "📸 #fotokeren #memories #daily #fyp",
+    "🎥 #videolucu #seru #reels #explore"
+]
+# --- AKHIR DAFTAR CAPTION EMOTE + HASHTAG ---
 
-async def main_async(): # Tetap async def karena asyncio.run() di akhir
+async def main_async():
     if not os.path.exists(VIDEO_FOLDER):
         os.makedirs(VIDEO_FOLDER)
 
@@ -33,9 +41,7 @@ async def main_async(): # Tetap async def karena asyncio.run() di akhir
     media_info = None
 
     try:
-        # 1. Ambil media terbaru dari bot chat (bisa video atau foto)
         logger.info("Fetching latest media (video/photo) from Telegram chat.")
-        # Mengganti get_latest_video_from_bot_chat menjadi get_latest_media_from_bot_chat
         downloaded_media_path, media_info = get_latest_media_from_bot_chat(BOT_TOKEN, CHAT_ID, VIDEO_FOLDER)
 
         if not downloaded_media_path or not media_info:
@@ -44,22 +50,27 @@ async def main_async(): # Tetap async def karena asyncio.run() di akhir
             return
 
         media_type = media_info.get('type')
-        raw_caption = media_info.get('caption', None) # Ambil caption asli, bisa None
+        raw_caption = media_info.get('caption', None)
         
-        # Panggil Gemini untuk memproses/menghasilkan caption
-        logger.info("Calling Gemini to process/generate caption...")
-        # --- PERUBAHAN DI SINI: Hapus 'await' ---
-        processed_caption = process_caption_with_gemini(raw_caption, media_type=media_type)
+        processed_caption = ""
+        # --- PERUBAHAN DI SINI: Logika penentuan caption ---
+        if not raw_caption or raw_caption.strip() == "": # Jika caption kosong atau hanya spasi
+            logger.info("Raw caption is empty. Generating generic emoji+hashtag caption.")
+            processed_caption = random.choice(GENERIC_EMOJI_HASHTAG_CAPTIONS)
+        else:
+            # Jika ada raw_caption, baru panggil Gemini untuk memprosesnya
+            logger.info("Calling Gemini to process/generate caption...")
+            processed_caption = process_caption_with_gemini(raw_caption, media_type=media_type)
         # --- AKHIR PERUBAHAN ---
-        
-        logger.info(f"Media ditemukan: Tipe={media_type}, Keterangan='{raw_caption}' (Gemini Processed: '{processed_caption}')")
-        send_telegram(f"📥 Media ditemukan: '{raw_caption}'. Tipe: {media_type}. Sedang diproses dengan Gemini...")
+
+        logger.info(f"Media ditemukan: Tipe={media_type}, Keterangan='{raw_caption}' (Final Processed: '{processed_caption}')")
+        send_telegram(f"📥 Media ditemukan: '{raw_caption}'. Tipe: {media_type}. Menggunakan caption: '{processed_caption}'.")
 
         # --- Logika Penentuan Tipe Upload ---
         upload_success = False
         post_id = None
         
-        final_description = processed_caption 
+        final_description = processed_caption # Final caption yang akan digunakan
 
         if media_type == 'video':
             logger.info(f"Processing video: {downloaded_media_path}")
@@ -105,6 +116,5 @@ async def main_async(): # Tetap async def karena asyncio.run() di akhir
             os.remove(downloaded_media_path)
             logger.info(f"Cleaned up local media file after error: {downloaded_media_path}")
 
-# Panggil fungsi async main_async()
 if __name__ == "__main__":
     asyncio.run(main_async())
