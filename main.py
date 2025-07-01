@@ -3,13 +3,13 @@ import os
 import logging
 import time
 import asyncio
-import random # <-- Pastikan modul random ada
+import random
 
 from telegram_fetcher import get_latest_media_from_bot_chat
 from video_utils import validate_video, get_video_duration
 from facebook_uploader import upload_reel, upload_regular_video, upload_photo
 from telegram_notify import send_telegram
-from gemini_processor import process_caption_with_gemini # Import tetap ada, hanya dipanggil di kondisi tertentu
+from gemini_processor import process_caption_with_gemini
 
 # Konfigurasi
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -29,6 +29,16 @@ GENERIC_EMOJI_HASHTAG_CAPTIONS = [
     "🎥 #videolucu #seru #reels #explore"
 ]
 # --- AKHIR DAFTAR CAPTION EMOTE + HASHTAG ---
+
+# --- DAFTAR CAPTION BAWAAN TELEGRAM YANG HARUS DIANGGAP KOSONG UNTUK AI ---
+GENERIC_TELEGRAM_DEFAULTS = [
+    "Photo",
+    "Video",
+    "Photo dari Telegram",
+    "Video dari Telegram",
+    # Anda bisa menambahkan lebih banyak jika menemukan pola default lain dari Telegram
+]
+# --- AKHIR DAFTAR CAPTION BAWAAN TELEGRAM ---
 
 async def main_async():
     if not os.path.exists(VIDEO_FOLDER):
@@ -53,13 +63,17 @@ async def main_async():
         raw_caption = media_info.get('caption', None)
         
         processed_caption = ""
-        # --- PERUBAHAN DI SINI: Logika penentuan caption ---
-        if not raw_caption or raw_caption.strip() == "": # Jika caption kosong atau hanya spasi
-            logger.info("Raw caption is empty. Generating generic emoji+hashtag caption.")
+        # --- PERUBAHAN DI SINI: Logika penentuan caption yang lebih cerdas ---
+        # Cek apakah raw_caption kosong atau merupakan salah satu default generik Telegram
+        if not raw_caption or \
+           raw_caption.strip() == "" or \
+           raw_caption.strip().lower() in [g.lower() for g in GENERIC_TELEGRAM_DEFAULTS]: # Ubah ke lowercase untuk perbandingan
+            
+            logger.info(f"Raw caption is empty or generic Telegram default ('{raw_caption}'). Generating generic emoji+hashtag caption.")
             processed_caption = random.choice(GENERIC_EMOJI_HASHTAG_CAPTIONS)
         else:
-            # Jika ada raw_caption, baru panggil Gemini untuk memprosesnya
-            logger.info("Calling Gemini to process/generate caption...")
+            # Jika ada raw_caption yang valid (bukan generik default), baru panggil Gemini untuk memprosesnya
+            logger.info(f"Raw caption detected: '{raw_caption}'. Calling Gemini to process it.")
             processed_caption = process_caption_with_gemini(raw_caption, media_type=media_type)
         # --- AKHIR PERUBAHAN ---
 
@@ -70,7 +84,7 @@ async def main_async():
         upload_success = False
         post_id = None
         
-        final_description = processed_caption # Final caption yang akan digunakan
+        final_description = processed_caption 
 
         if media_type == 'video':
             logger.info(f"Processing video: {downloaded_media_path}")
