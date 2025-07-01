@@ -1,0 +1,38 @@
+name: AutoPost Facebook Reels
+
+on:
+  workflow_dispatch: # Memungkinkan pemicuan manual dari UI GitHub Actions
+  schedule:
+    - cron: '0 */6 * * *' # Menjalankan setiap 6 jam (pada menit ke-0, setiap 6 jam)
+
+jobs:
+  run-autopost:
+    runs-on: ubuntu-latest # Menjalankan di lingkungan Ubuntu terbaru
+
+    steps:
+    - name: Checkout repository # Mengambil kode dari repositori GitHub
+      uses: actions/checkout@v4
+
+    - name: Set up Python # Mengatur lingkungan Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9' # Menentukan versi Python yang akan digunakan
+
+    - name: Install dependencies # Menginstal dependensi Python dari requirements.txt
+      run: |
+        pip install -r requirements.txt
+
+    - name: Install FFmpeg # Menginstal FFmpeg, yang diperlukan oleh video_utils.py
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+
+    - name: Run AutoPost Script # Menjalankan skrip utama
+      env: # Mengatur variabel lingkungan dari GitHub Secrets
+        FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
+        FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        python main.py
