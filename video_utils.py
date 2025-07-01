@@ -2,7 +2,8 @@
 import subprocess
 import json
 import logging
-import re # Impor modul re untuk regex
+import re
+import os # <-- BARU: import os
 
 logger = logging.getLogger(__name__)
 
@@ -11,9 +12,9 @@ def get_video_metadata(video_path):
     cmd = [
         'ffprobe',
         '-v', 'error',
-        '-select_streams', 'v:0', # Pilih stream video pertama
-        '-show_entries', 'stream=width,height,codec_name', # Tambah codec_name
-        '-show_entries', 'format=duration', # Ambil durasi dari format
+        '-select_streams', 'v:0',
+        '-show_entries', 'stream=width,height,codec_name',
+        '-show_entries', 'format=duration',
         '-of', 'json',
         video_path
     ]
@@ -39,7 +40,7 @@ def get_video_duration(video_path):
         logger.info(f"Durasi video: {duration} detik")
         return duration
     logger.warning(f"Tidak dapat menentukan durasi video untuk {video_path}.")
-    return 0 # Kembali 0 jika durasi tidak dapat ditentukan
+    return 0
 
 def get_video_resolution(video_path):
     """Mendapatkan resolusi (width, height) video."""
@@ -76,9 +77,9 @@ def validate_video(video_path):
     aspect_ratio = width / height
     tolerance = 0.05 # Toleransi yang sedikit lebih longgar untuk rasio aspek
 
-    is_portrait_9_16 = abs(aspect_ratio - (9/16)) < tolerance # 0.5625
-    is_landscape_16_9 = abs(aspect_ratio - (16/9)) < tolerance # 1.777...
-    is_square_1_1 = abs(aspect_ratio - (1/1)) < tolerance # 1.0
+    is_portrait_9_16 = abs(aspect_ratio - (9/16)) < tolerance
+    is_landscape_16_9 = abs(aspect_ratio - (16/9)) < tolerance
+    is_square_1_1 = abs(aspect_ratio - (1/1)) < tolerance
 
     if not (is_portrait_9_16 or is_landscape_16_9 or is_square_1_1):
         logger.warning(f"Rasio aspek video ({width}:{height}, {aspect_ratio:.2f}) tidak mendekati 9:16, 16:9, atau 1:1 untuk Reels.")
