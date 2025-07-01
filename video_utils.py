@@ -113,7 +113,6 @@ if __name__ == '__main__':
     # Dalam penggunaan nyata, file ini akan diunduh dari Telegram
     if not os.path.exists(test_video_path_reel):
         logging.warning(f"File '{test_video_path_reel}' tidak ditemukan. Buat file video dummy untuk pengujian.")
-        # Anda bisa membuat file dummy kosong atau mengunduh video kecil
         # with open(test_video_path_reel, 'w') as f:
         #     f.write("dummy video content")
     
