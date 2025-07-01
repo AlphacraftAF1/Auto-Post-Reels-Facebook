@@ -7,7 +7,7 @@ import time
 
 logger = logging.getLogger(__name__)
 
-FB_GRAPH_API_BASE = "https://graph.facebook.com/V23.0" # Pastikan versi API terbaru
+FB_GRAPH_API_BASE = "https://graph.facebook.com/v23.0" # Pastikan versi API terbaru
 
 def get_upload_status(upload_phase_id, fb_access_token):
     """Memeriksa status upload video."""
