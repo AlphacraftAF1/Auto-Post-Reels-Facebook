@@ -2,22 +2,30 @@
 import os
 import logging
 import time
+# import re # Tidak perlu lagi re di sini karena sudah di handle gemini_processor
+# import random # Tidak perlu lagi random di sini
 
-from telegram_fetcher import get_latest_media_from_bot_chat # Nama fungsi diubah
-from video_utils import validate_video, get_video_duration # Tambah get_video_duration
-from facebook_uploader import upload_reel, upload_regular_video, upload_photo # Impor semua uploader
-from telegram_notify import send_telegram # Notifikasi ke Telegram
+import asyncio # <-- BARU: Untuk menjalankan fungsi async
+
+from telegram_fetcher import get_latest_media_from_bot_chat
+from video_utils import validate_video, get_video_duration
+from facebook_uploader import upload_reel, upload_regular_video, upload_photo
+from telegram_notify import send_telegram
+from gemini_processor import process_caption_with_gemini # <-- BARU: Import Gemini Processor
 
 # Konfigurasi
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") # Chat ID dari percakapan bot Anda dengan Anda
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 VIDEO_FOLDER = "videos"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def main():
+# Fungsi clean_caption yang lama akan Dihapus / Diganti
+
+
+async def main_async(): # <-- Ubah main() menjadi async main_async()
     if not os.path.exists(VIDEO_FOLDER):
         os.makedirs(VIDEO_FOLDER)
 
@@ -35,36 +43,40 @@ def main():
         if not downloaded_media_path or not media_info:
             send_telegram("❌ Tidak ada media baru yang ditemukan atau gagal mengambil media. Mungkin Anda belum kirim media terbaru, atau sudah diproses.")
             logger.warning("No new media found or failed to fetch media.")
-            return # Keluar jika tidak ada media baru
+            return
 
         media_type = media_info.get('type')
-        media_caption = media_info.get('caption', f"{media_type.capitalize()} dari Telegram Bot")
+        raw_caption = media_info.get('caption', None) # Ambil caption asli, bisa None
         
-        logger.info(f"Media ditemukan: Tipe={media_type}, Keterangan='{media_caption}'")
-        send_telegram(f"📥 Media ditemukan: '{media_caption}'. Tipe: {media_type}. Sedang diproses...")
+        # Panggil Gemini untuk memproses/menghasilkan caption
+        logger.info("Calling Gemini to process/generate caption...")
+        processed_caption = await process_caption_with_gemini(raw_caption, media_type=media_type)
+        
+        logger.info(f"Media ditemukan: Tipe={media_type}, Keterangan='{raw_caption}' (Gemini Processed: '{processed_caption}')")
+        send_telegram(f"📥 Media ditemukan: '{raw_caption}'. Tipe: {media_type}. Sedang diproses dengan Gemini...")
 
         # --- Logika Penentuan Tipe Upload ---
         upload_success = False
         post_id = None
+        
+        # Hashtag sudah di-handle oleh Gemini dalam processed_caption, jadi langsung gunakan itu.
+        # Jika Anda ingin menambahkan hashtag standar *setelah* Gemini, Anda bisa menambahkan di sini.
+        final_description = processed_caption 
 
         if media_type == 'video':
-            # Untuk video, kita tentukan apakah ini Reels atau video biasa
             logger.info(f"Processing video: {downloaded_media_path}")
             if validate_video(downloaded_media_path): # Cek validasi untuk Reels
-                # Video cocok untuk Reels (durasi < 60s & rasio 9:16)
                 send_telegram("🎥 Video cocok untuk Reels. Mencoba mengupload sebagai Reels...")
-                upload_success, post_id = upload_reel(downloaded_media_path, media_caption)
+                upload_success, post_id = upload_reel(downloaded_media_path, final_description)
                 post_type = "Reels"
             else:
-                # Video tidak cocok untuk Reels, upload sebagai video biasa
                 send_telegram("🎞️ Video tidak cocok untuk Reels (durasi/rasio). Mencoba mengupload sebagai video biasa...")
-                upload_success, post_id = upload_regular_video(downloaded_media_path, media_caption)
+                upload_success, post_id = upload_regular_video(downloaded_media_path, final_description)
                 post_type = "Video Reguler"
         
         elif media_type == 'photo':
-            # Untuk foto
             send_telegram("📸 Media adalah foto. Mencoba mengupload sebagai foto...")
-            upload_success, post_id = upload_photo(downloaded_media_path, media_caption)
+            upload_success, post_id = upload_photo(downloaded_media_path, final_description)
             post_type = "Foto"
         
         else:
@@ -76,11 +88,11 @@ def main():
 
         # --- Notifikasi Hasil Upload ---
         if upload_success:
-            send_telegram(f"✅ {post_type} berhasil diposting ke Facebook!\nJudul: {media_caption}\nPost ID: {post_id}")
-            logger.info(f"{post_type} posted successfully: {media_caption}, Post ID: {post_id}")
+            send_telegram(f"✅ {post_type} berhasil diposting ke Facebook!\nJudul: {processed_caption}\nPost ID: {post_id}")
+            logger.info(f"{post_type} posted successfully: {processed_caption}, Post ID: {post_id}")
         else:
-            send_telegram(f"❌ Gagal upload {post_type} ke Facebook: '{media_caption}'. Coba periksa log.")
-            logger.error(f"Failed to upload {post_type}: {media_caption}")
+            send_telegram(f"❌ Gagal upload {post_type} ke Facebook: '{processed_caption}'. Coba periksa log.")
+            logger.error(f"Failed to upload {post_type}: {processed_caption}")
         
         # Hapus media lokal setelah selesai diproses
         if os.path.exists(downloaded_media_path):
@@ -95,5 +107,6 @@ def main():
             os.remove(downloaded_media_path)
             logger.info(f"Cleaned up local media file after error: {downloaded_media_path}")
 
+# Panggil fungsi async main_async()
 if __name__ == "__main__":
-    main()
+    asyncio.run(main_async())
