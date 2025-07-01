@@ -1,4 +1,3 @@
-# facebook_uploader.py
 import requests
 import os
 import logging
@@ -9,10 +8,6 @@ FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
 
 def upload_reel(video_path, description):
-    """
-    Mengunggah video ke Facebook Reels.
-    Mengembalikan True jika sukses, False jika gagal, beserta ID Reels jika sukses.
-    """
     if not FB_PAGE_ID or not FB_ACCESS_TOKEN:
         logger.error("FB_PAGE_ID or FB_ACCESS_TOKEN not set.")
         return False, None
@@ -35,12 +30,12 @@ def upload_reel(video_path, description):
         init_response = requests.post(init_url, params=init_params, json=init_data)
         init_response.raise_for_status()
         init_data = init_response.json()
-        
+
         video_id = init_data.get("video_id")
         upload_url = init_data.get("upload_url")
-        
+
         if not video_id or not upload_url:
-            logger.error(f"Failed to get video_id or upload_url from Reels initialization: {init_data}")
+            logger.error(f"Failed to get video_id or upload_url from Reels init: {init_data}")
             return False, None
 
         logger.info(f"Uploading video to Reels: {upload_url}...")
@@ -50,10 +45,10 @@ def upload_reel(video_path, description):
             upload_data = upload_response.json()
 
         if not upload_data.get("success"):
-            logger.error(f"Failed to upload video to Reels: {upload_data}")
+            logger.error(f"Failed to upload video binary to Reels: {upload_data}")
             return False, None
 
-        logger.info(f"Finishing upload and publishing Reels (ID: {video_id})...")
+        logger.info(f"Finishing and publishing Reels (ID: {video_id})...")
         finish_url = f"https://graph.facebook.com/v23.0/{FB_PAGE_ID}/video_reels"
         finish_params = {
             "upload_phase": "finish",
@@ -61,7 +56,6 @@ def upload_reel(video_path, description):
             "description": description,
             "access_token": FB_ACCESS_TOKEN
         }
-        
         finish_response = requests.post(finish_url, params=finish_params)
         finish_response.raise_for_status()
         finish_data = finish_response.json()
@@ -74,21 +68,17 @@ def upload_reel(video_path, description):
             return False, None
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Facebook API or connection error during Reels upload: {e}", exc_info=True)
+        logger.error(f"Facebook API error during Reels upload: {e}", exc_info=True)
         if e.response is not None:
-            logger.error(f"Error response from Facebook: {e.response.text}")
+            logger.error(f"Facebook response: {e.response.text}")
         return False, None
     except Exception as e:
         logger.error(f"General error during Reels upload: {e}", exc_info=True)
         return False, None
 
 def upload_regular_video(video_path, description):
-    """
-    Mengunggah video sebagai postingan video reguler ke Facebook Page.
-    Mengembalikan True jika sukses, False jika gagal, beserta ID post jika sukses.
-    """
     if not FB_PAGE_ID or not FB_ACCESS_TOKEN:
-        logger.error("FB_PAGE_ID or FB_ACCESS_TOKEN not set for regular video upload.")
+        logger.error("FB_PAGE_ID or FB_ACCESS_TOKEN not set.")
         return False, None
     if not os.path.exists(video_path):
         logger.error(f"Video file not found for regular video upload: {video_path}")
@@ -97,8 +87,7 @@ def upload_regular_video(video_path, description):
     upload_url = f"https://graph.facebook.com/v23.0/{FB_PAGE_ID}/videos"
     params = {
         "description": description,
-        "access_token": FB_ACCESS_TOKEN,
-        "file_size": os.path.getsize(video_path) # opsional tapi baik untuk diberikan
+        "access_token": FB_ACCESS_TOKEN
     }
 
     try:
@@ -118,37 +107,32 @@ def upload_regular_video(video_path, description):
             return False, None
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Facebook API or connection error during regular video upload: {e}", exc_info=True)
+        logger.error(f"Facebook API error during regular video upload: {e}", exc_info=True)
         if e.response is not None:
-            logger.error(f"Error response from Facebook: {e.response.text}")
+            logger.error(f"Facebook response: {e.response.text}")
         return False, None
     except Exception as e:
         logger.error(f"General error during regular video upload: {e}", exc_info=True)
         return False, None
 
-
 def upload_photo(photo_path, description):
-    """
-    Mengunggah foto sebagai postingan foto ke Facebook Page.
-    Mengembalikan True jika sukses, False jika gagal, beserta ID post jika sukses.
-    """
     if not FB_PAGE_ID or not FB_ACCESS_TOKEN:
-        logger.error("FB_PAGE_ID or FB_ACCESS_TOKEN not set for photo upload.")
+        logger.error("FB_PAGE_ID or FB_ACCESS_TOKEN not set.")
         return False, None
     if not os.path.exists(photo_path):
-        logger.error(f"Photo file not found for upload: {photo_path}")
+        logger.error(f"Photo file not found: {photo_path}")
         return False, None
 
     upload_url = f"https://graph.facebook.com/v23.0/{FB_PAGE_ID}/photos"
     params = {
         "caption": description,
-        "access_token": FB_ACCESS_TOKEN,
+        "access_token": FB_ACCESS_TOKEN
     }
 
     try:
         logger.info(f"Uploading photo: {photo_path}...")
         with open(photo_path, 'rb') as photo_file:
-            files = {'source': (os.path.basename(photo_path), photo_file, 'image/jpeg')} # Asumsi JPEG
+            files = {'source': (os.path.basename(photo_path), photo_file, 'image/jpeg')}
             response = requests.post(upload_url, params=params, files=files)
             response.raise_for_status()
             upload_data = response.json()
@@ -162,14 +146,14 @@ def upload_photo(photo_path, description):
             return False, None
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Facebook API or connection error during photo upload: {e}", exc_info=True)
+        logger.error(f"Facebook API error during photo upload: {e}", exc_info=True)
         if e.response is not None:
-            logger.error(f"Error response from Facebook: {e.response.text}")
+            logger.error(f"Facebook response: {e.response.text}")
         return False, None
     except Exception as e:
         logger.error(f"General error during photo upload: {e}", exc_info=True)
         return False, None
 
-# Contoh penggunaan (bisa dihapus nanti)
+# Optional: test run
 if __name__ == "__main__":
     pass
