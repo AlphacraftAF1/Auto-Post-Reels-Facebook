@@ -61,6 +61,11 @@ jobs:
         echo "[]" > posted.json
         echo "0" > last_update_offset.txt
       shell: bash
+
+    - name: Verify history files content (before script run)
+      # --- PERUBAHAN DI SINI: Sekarang menjadi satu baris ---
+      run: echo "Content of posted.json (before script run):"; cat posted.json; echo "Content of last_update_offset.txt (before script run):"; cat last_update_offset.txt
+      shell: bash
     # --- AKHIR Cache history files ---
 
     - name: Run AutoPost Script
