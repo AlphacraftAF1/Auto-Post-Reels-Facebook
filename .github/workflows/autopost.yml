@@ -63,7 +63,7 @@ jobs:
       shell: bash
 
     - name: Verify history files content (before script run)
-      # --- PERUBAHAN DI SINI: Sekarang menjadi satu baris ---
+      # Tampilkan konten file untuk debugging
       run: echo "Content of posted.json (before script run):"; cat posted.json; echo "Content of last_update_offset.txt (before script run):"; cat last_update_offset.txt
       shell: bash
     # --- AKHIR Cache history files ---
