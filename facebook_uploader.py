@@ -1,167 +1,175 @@
-# telegram_fetcher.py
+# facebook_uploader.py
 import requests
 import os
-import json
 import logging
 
 logger = logging.getLogger(__name__)
 
-LAST_UPDATE_OFFSET_FILE = "last_update_offset.txt"
+FB_PAGE_ID = os.getenv("FB_PAGE_ID")
+FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
 
-def save_last_update_offset(offset):
-    """Menyimpan offset update terakhir."""
-    try:
-        with open(LAST_UPDATE_OFFSET_FILE, "w") as f:
-            f.write(str(offset))
-        logger.info(f"Saved last update offset: {offset}")
-    except Exception as e:
-        logger.error(f"Failed to save last update offset: {e}")
-
-def get_last_update_offset():
-    """Mengambil offset update terakhir yang tersimpan."""
-    if os.path.exists(LAST_UPDATE_OFFSET_FILE):
-        try:
-            with open(LAST_UPDATE_OFFSET_FILE, "r") as f:
-                return int(f.read().strip())
-        except (ValueError, IOError) as e:
-            logger.warning(f"Could not read last update offset, starting fresh. Error: {e}")
-            return 0
-    return 0
-
-def get_latest_media_from_bot_chat(bot_token, chat_id, output_folder):
+def upload_reel(video_path, description):
     """
-    Mengambil media (video atau foto) terbaru yang dikirim ke bot dari chat_id tertentu.
-    Mengembalikan:
-        - media_filepath (string): Path ke file yang didownload
-        - media_info (dict): Metadata media dari Telegram (termasuk 'type': 'video'/'photo')
-    Jika tidak ada media baru atau gagal, mengembalikan (None, None).
+    Mengunggah video ke Facebook Reels.
+    Mengembalikan True jika sukses, False jika gagal, beserta ID Reels jika sukses.
     """
-    if not bot_token or not chat_id:
-        logger.error("BOT_TOKEN or CHAT_ID not set for Telegram fetcher.")
-        return None, None
+    if not FB_PAGE_ID or not FB_ACCESS_TOKEN:
+        logger.error("FB_PAGE_ID or FB_ACCESS_TOKEN not set.")
+        return False, None
+    if not os.path.exists(video_path):
+        logger.error(f"Video file not found for Reels upload: {video_path}")
+        return False, None
 
-    base_url = f"https://api.telegram.org/bot{bot_token}/"
-    current_offset = get_last_update_offset()
-    
-    params = {
-        'offset': current_offset + 1,
-        'limit': 10, # Ambil beberapa update terbaru
-        'timeout': 20
+    init_url = f"https://graph.facebook.com/v23.0/{FB_PAGE_ID}/video_reels"
+    init_params = {
+        "upload_phase": "start",
+        "access_token": FB_ACCESS_TOKEN
+    }
+    init_data = {
+        "name": os.path.basename(video_path),
+        "file_size": os.path.getsize(video_path)
     }
 
     try:
-        get_updates_url = f"{base_url}getUpdates"
-        logger.info(f"Fetching updates from Telegram with offset: {params['offset']} and limit: {params['limit']}")
-        response = requests.get(get_updates_url, params=params)
-        response.raise_for_status()
-        updates = response.json().get('result', [])
-
-        if not updates:
-            logger.info("No new updates found from Telegram.")
-            return None, None
-
-        max_update_id = current_offset
-        if updates:
-            max_update_id = max(u['update_id'] for u in updates)
-            save_last_update_offset(max_update_id) # Simpan offset tertinggi yang kita lihat
-
-
-        # Cari media terbaru (video atau foto) dari CHAT_ID yang benar
-        latest_media_message = None
-        media_type = None # Akan 'video' atau 'photo'
-
-        for update in sorted(updates, key=lambda x: x['update_id'], reverse=True):
-            if 'message' in update:
-                message = update['message']
-                if str(message['chat']['id']) == str(chat_id):
-                    if 'video' in message:
-                        latest_media_message = message
-                        media_type = 'video'
-                        logger.info(f"Found a video message (Update ID: {update['update_id']}).")
-                        break
-                    elif 'photo' in message:
-                        latest_media_message = message
-                        media_type = 'photo'
-                        logger.info(f"Found a photo message (Update ID: {update['update_id']}).")
-                        break
+        logger.info("Starting Reels upload session...")
+        init_response = requests.post(init_url, params=init_params, json=init_data)
+        init_response.raise_for_status()
+        init_data = init_response.json()
         
-        if not latest_media_message:
-            logger.info(f"No new video or photo message found from CHAT_ID '{chat_id}' in fetched updates.")
-            return None, None
-
-        # Dapatkan file_id dan unique_id berdasarkan tipe media
-        file_id = None
-        file_unique_id = None
-        if media_type == 'video':
-            file_id = latest_media_message['video']['file_id']
-            file_unique_id = latest_media_message['video']['file_unique_id']
-        elif media_type == 'photo':
-            # Foto bisa punya beberapa ukuran, ambil yang terbesar (terakhir di array)
-            largest_photo = latest_media_message['photo'][-1]
-            file_id = largest_photo['file_id']
-            file_unique_id = largest_photo['file_unique_id']
-
-        if not file_id:
-            logger.error("No file_id found for the detected media.")
-            return None, None
-
-        # Dapatkan info file untuk URL download
-        get_file_url = f"{base_url}getFile"
-        file_response = requests.get(get_file_url, params={'file_id': file_id})
-        file_response.raise_for_status()
-        file_info = file_response.json().get('result', {})
-
-        if not file_info or 'file_path' not in file_info:
-            logger.error(f"Could not get file info for file_id: {file_id}")
-            return None, None
-
-        download_url = f"https://api.telegram.org/file/bot{bot_token}/{file_info['file_path']}"
+        video_id = init_data.get("video_id")
+        upload_url = init_data.get("upload_url")
         
-        # Tentukan ekstensi file berdasarkan mime_type atau tipe media
-        file_extension = "mp4" if media_type == 'video' else "jpg" # Asumsi default
-        if file_info.get('file_path'):
-            _, ext = os.path.splitext(file_info['file_path'])
-            if ext:
-                file_extension = ext.lstrip('.')
+        if not video_id or not upload_url:
+            logger.error(f"Failed to get video_id or upload_url from Reels initialization: {init_data}")
+            return False, None
 
-        output_filepath = os.path.join(output_folder, f"{file_unique_id}.{file_extension}")
+        logger.info(f"Uploading video to Reels: {upload_url}...")
+        with open(video_path, 'rb') as video_file:
+            upload_response = requests.post(upload_url, data=video_file, headers={'Content-Type': 'video/mp4'})
+            upload_response.raise_for_status()
+            upload_data = upload_response.json()
 
-        # Pastikan kita tidak mendownload ulang file yang sudah ada (berdasarkan unique ID)
-        if os.path.exists(output_filepath):
-            logger.info(f"File {output_filepath} already exists. Assuming it was processed. Skipping download.")
-            return None, None
+        if not upload_data.get("success"):
+            logger.error(f"Failed to upload video to Reels: {upload_data}")
+            return False, None
 
-        # Download media
-        logger.info(f"Downloading {media_type} from Telegram URL: {download_url}")
-        file_download_response = requests.get(download_url, stream=True)
-        file_download_response.raise_for_status()
-
-        with open(output_filepath, 'wb') as f:
-            for chunk in file_download_response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        
-        logger.info(f"{media_type.capitalize()} downloaded successfully to: {output_filepath}")
-        
-        # Gabungkan info media dari Telegram
-        media_metadata = {
-            'type': media_type, # Penting untuk main.py
-            'file_id': file_id,
-            'file_unique_id': file_unique_id,
-            'caption': latest_media_message.get('caption', f"{media_type.capitalize()} dari Telegram"),
-            'duration': latest_media_message['video'].get('duration') if media_type == 'video' else None,
-            'width': latest_media_message['video'].get('width') if media_type == 'video' else (largest_photo['width'] if media_type == 'photo' else None),
-            'height': latest_media_message['video'].get('height') if media_type == 'video' else (largest_photo['height'] if media_type == 'photo' else None),
-            'mime_type': latest_media_message['video'].get('mime_type') if media_type == 'video' else (largest_photo['mime_type'] if media_type == 'photo' else None)
+        logger.info(f"Finishing upload and publishing Reels (ID: {video_id})...")
+        finish_url = f"https://graph.facebook.com/v23.0/{FB_PAGE_ID}/video_reels"
+        finish_params = {
+            "upload_phase": "finish",
+            "video_id": video_id,
+            "description": description,
+            "access_token": FB_ACCESS_TOKEN
         }
-        return output_filepath, media_metadata
+        
+        finish_response = requests.post(finish_url, params=finish_params)
+        finish_response.raise_for_status()
+        finish_data = finish_response.json()
+
+        if finish_data.get("success"):
+            logger.info(f"Reels successfully posted with ID: {video_id}")
+            return True, video_id
+        else:
+            logger.error(f"Failed to publish Reels: {finish_data}")
+            return False, None
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Telegram API request failed: {e}", exc_info=True)
-        return None, None
+        logger.error(f"Facebook API or connection error during Reels upload: {e}", exc_info=True)
+        if e.response is not None:
+            logger.error(f"Error response from Facebook: {e.response.text}")
+        return False, None
     except Exception as e:
-        logger.error(f"Error in get_latest_media_from_bot_chat: {e}", exc_info=True)
-        return None, None
+        logger.error(f"General error during Reels upload: {e}", exc_info=True)
+        return False, None
 
-# Contoh penggunaan lokal (bisa dihapus nanti)
+def upload_regular_video(video_path, description):
+    """
+    Mengunggah video sebagai postingan video reguler ke Facebook Page.
+    Mengembalikan True jika sukses, False jika gagal, beserta ID post jika sukses.
+    """
+    if not FB_PAGE_ID or not FB_ACCESS_TOKEN:
+        logger.error("FB_PAGE_ID or FB_ACCESS_TOKEN not set for regular video upload.")
+        return False, None
+    if not os.path.exists(video_path):
+        logger.error(f"Video file not found for regular video upload: {video_path}")
+        return False, None
+
+    upload_url = f"https://graph.facebook.com/v23.0/{FB_PAGE_ID}/videos"
+    params = {
+        "description": description,
+        "access_token": FB_ACCESS_TOKEN,
+        "file_size": os.path.getsize(video_path) # opsional tapi baik untuk diberikan
+    }
+
+    try:
+        logger.info(f"Uploading regular video: {video_path}...")
+        with open(video_path, 'rb') as video_file:
+            files = {'source': (os.path.basename(video_path), video_file, 'video/mp4')}
+            response = requests.post(upload_url, params=params, files=files)
+            response.raise_for_status()
+            upload_data = response.json()
+
+        if upload_data.get("id"):
+            post_id = upload_data["id"]
+            logger.info(f"Regular video successfully posted with ID: {post_id}")
+            return True, post_id
+        else:
+            logger.error(f"Failed to post regular video: {upload_data}")
+            return False, None
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Facebook API or connection error during regular video upload: {e}", exc_info=True)
+        if e.response is not None:
+            logger.error(f"Error response from Facebook: {e.response.text}")
+        return False, None
+    except Exception as e:
+        logger.error(f"General error during regular video upload: {e}", exc_info=True)
+        return False, None
+
+
+def upload_photo(photo_path, description):
+    """
+    Mengunggah foto sebagai postingan foto ke Facebook Page.
+    Mengembalikan True jika sukses, False jika gagal, beserta ID post jika sukses.
+    """
+    if not FB_PAGE_ID or not FB_ACCESS_TOKEN:
+        logger.error("FB_PAGE_ID or FB_ACCESS_TOKEN not set for photo upload.")
+        return False, None
+    if not os.path.exists(photo_path):
+        logger.error(f"Photo file not found for upload: {photo_path}")
+        return False, None
+
+    upload_url = f"https://graph.facebook.com/v23.0/{FB_PAGE_ID}/photos"
+    params = {
+        "caption": description,
+        "access_token": FB_ACCESS_TOKEN,
+    }
+
+    try:
+        logger.info(f"Uploading photo: {photo_path}...")
+        with open(photo_path, 'rb') as photo_file:
+            files = {'source': (os.path.basename(photo_path), photo_file, 'image/jpeg')} # Asumsi JPEG
+            response = requests.post(upload_url, params=params, files=files)
+            response.raise_for_status()
+            upload_data = response.json()
+
+        if upload_data.get("id"):
+            post_id = upload_data["id"]
+            logger.info(f"Photo successfully posted with ID: {post_id}")
+            return True, post_id
+        else:
+            logger.error(f"Failed to post photo: {upload_data}")
+            return False, None
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Facebook API or connection error during photo upload: {e}", exc_info=True)
+        if e.response is not None:
+            logger.error(f"Error response from Facebook: {e.response.text}")
+        return False, None
+    except Exception as e:
+        logger.error(f"General error during photo upload: {e}", exc_info=True)
+        return False, None
+
+# Contoh penggunaan (bisa dihapus nanti)
 if __name__ == "__main__":
     pass
