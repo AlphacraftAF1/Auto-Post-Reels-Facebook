@@ -14,9 +14,9 @@ from telegram_notify import send_telegram
 KEYWORDS = [
     "funny cat shorts",
     "funny dog shorts",
-    "cute animal shorts",
-    "comedy shorts",
-    "prank shorts"
+    "meme shorts",
+    "meme indonesia short",
+    "memes"
 ]
 MAX_RETRIES = 3 # Jumlah percobaan jika ada kegagalan
 VIDEO_FOLDER = "videos"
