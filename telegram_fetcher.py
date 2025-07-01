@@ -7,7 +7,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# File untuk menyimpan 'offset' agar tidak memproses update yang sama berulang kali
 LAST_UPDATE_OFFSET_FILE = "last_update_offset.txt"
 
 def save_last_update_offset(offset):
@@ -41,47 +40,60 @@ def get_latest_video_from_bot_chat(bot_token, chat_id, output_folder):
         return None, None
 
     base_url = f"https://api.telegram.org/bot{bot_token}/"
-    offset = get_last_update_offset() + 1 # Mulai dari update setelah yang terakhir diproses
+    
+    # Dapatkan offset terakhir
+    current_offset = get_last_update_offset()
+    
+    # Kita akan mencoba mengambil lebih dari 1 update untuk mencari video terbaru
+    # Ambil 10 update terakhir. Jika ada update yang sudah diproses, Telegram akan mengabaikannya
+    # jika offset yang dikirim adalah update_id + 1.
+    params = {
+        'offset': current_offset + 1, # Ambil update setelah yang terakhir diproses
+        'limit': 10, # Ambil beberapa update, bukan cuma 1
+        'timeout': 20 # Timeout request lebih lama
+    }
 
     try:
-        # Coba ambil update terbaru dengan offset
         get_updates_url = f"{base_url}getUpdates"
-        params = {
-            'offset': offset,
-            'limit': 1, # Ambil hanya 1 update terbaru
-            'timeout': 10 # Timeout untuk request
-        }
-        logger.info(f"Fetching updates from Telegram with offset: {offset}")
+        logger.info(f"Fetching updates from Telegram with offset: {params['offset']} and limit: {params['limit']}")
         response = requests.get(get_updates_url, params=params)
-        response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
+        response.raise_for_status()
         updates = response.json().get('result', [])
 
         if not updates:
             logger.info("No new updates found from Telegram.")
             return None, None
 
-        # Kita ambil update terakhir yang valid (mungkin ada update yang bukan video)
-        latest_video_update = None
-        for update in sorted(updates, key=lambda x: x['update_id'], reverse=True):
-            if 'message' in update and 'video' in update['message']:
-                # Pastikan video datang dari CHAT_ID yang benar
-                if str(update['message']['chat']['id']) == str(chat_id):
-                    latest_video_update = update['message']
-                    # Simpan offset dari update yang baru diproses
-                    save_last_update_offset(update['update_id'])
-                    break # Ambil video pertama yang cocok dan keluar
+        # Update offset tertinggi yang kita lihat, bahkan jika tidak ada video.
+        # Ini penting agar kita tidak terus-menerus memproses update yang sama.
+        max_update_id = current_offset
+        if updates:
+            max_update_id = max(u['update_id'] for u in updates)
+            save_last_update_offset(max_update_id)
 
-        if not latest_video_update:
-            logger.info(f"No new video message found from CHAT_ID '{chat_id}' in latest updates.")
-            # Tetap simpan offset update_id tertinggi yang kita lihat, agar tidak memproses lagi
-            if updates:
-                save_last_update_offset(max(u['update_id'] for u in updates))
+
+        # Cari video terbaru dari CHAT_ID yang benar
+        latest_video_message = None
+        # Urutkan update dari yang terbaru ke terlama berdasarkan update_id
+        for update in sorted(updates, key=lambda x: x['update_id'], reverse=True):
+            if 'message' in update:
+                message = update['message']
+                if str(message['chat']['id']) == str(chat_id) and 'video' in message:
+                    latest_video_message = message
+                    logger.info(f"Found a video message (Update ID: {update['update_id']}).")
+                    # Kita sudah menyimpan offset dari max_update_id di atas
+                    break # Ambil video pertama yang cocok dan keluar loop
+
+        if not latest_video_message:
+            logger.info(f"No new video message found from CHAT_ID '{chat_id}' in fetched updates.")
             return None, None
 
-        video_file_id = latest_video_update['video']['file_id']
-        video_unique_id = latest_video_update['video']['file_unique_id']
-        file_name_suffix = video_unique_id # Menggunakan unique ID sebagai nama unik
-
+        video_file_id = latest_video_message['video']['file_id']
+        video_unique_id = latest_video_message['video']['file_unique_id']
+        
+        # Cek apakah video ini sudah pernah kita proses berdasarkan file_unique_id
+        # Ini membutuhkan file history. Untuk saat ini kita abaikan dulu, fokus download
+        
         # Dapatkan info file untuk URL download
         get_file_url = f"{base_url}getFile"
         file_response = requests.get(get_file_url, params={'file_id': video_file_id})
@@ -93,10 +105,18 @@ def get_latest_video_from_bot_chat(bot_token, chat_id, output_folder):
             return None, None
 
         download_url = f"https://api.telegram.org/file/bot{bot_token}/{file_info['file_path']}"
-        output_filepath = os.path.join(output_folder, f"{file_name_suffix}.mp4")
+        output_filepath = os.path.join(output_folder, f"{video_unique_id}.mp4")
+
+        # Pastikan kita tidak mendownload ulang file yang sudah ada
+        if os.path.exists(output_filepath):
+            logger.info(f"File {output_filepath} already exists. Assuming it was processed. Skipping download.")
+            # Kita bisa memutuskan di sini apakah akan memproses ulang atau tidak.
+            # Untuk skenario ini, kita anggap sudah diproses dan kembali None
+            # Jika Anda ingin memproses ulang, hapus block if ini.
+            return None, None
 
         # Download file video
-        logger.info(f"Downloading video from Telegram: {download_url}")
+        logger.info(f"Downloading video from Telegram URL: {download_url}")
         file_download_response = requests.get(download_url, stream=True)
         file_download_response.raise_for_status()
 
@@ -110,11 +130,11 @@ def get_latest_video_from_bot_chat(bot_token, chat_id, output_folder):
         video_metadata = {
             'file_id': video_file_id,
             'file_unique_id': video_unique_id,
-            'caption': latest_video_update.get('caption', 'Video dari Telegram'),
-            'duration': latest_video_update['video'].get('duration'),
-            'width': latest_video_update['video'].get('width'),
-            'height': latest_video_update['video'].get('height'),
-            'mime_type': latest_video_update['video'].get('mime_type')
+            'caption': latest_video_message.get('caption', 'Video dari Telegram'),
+            'duration': latest_video_message['video'].get('duration'),
+            'width': latest_video_message['video'].get('width'),
+            'height': latest_video_message['video'].get('height'),
+            'mime_type': latest_video_message['video'].get('mime_type')
         }
         return output_filepath, video_metadata
 
@@ -124,19 +144,6 @@ def get_latest_video_from_bot_chat(bot_token, chat_id, output_folder):
     except Exception as e:
         logger.error(f"Error in get_latest_video_from_bot_chat: {e}", exc_info=True)
         return None, None
-
-# Helper function (if needed) to get info for a specific file_id
-def get_video_info_from_telegram_file(bot_token, file_id):
-    """Mendapatkan info detail file dari Telegram dengan file_id."""
-    base_url = f"https://api.telegram.org/bot{bot_token}/"
-    get_file_url = f"{base_url}getFile"
-    try:
-        response = requests.get(get_file_url, params={'file_id': file_id})
-        response.raise_for_status()
-        return response.json().get('result', {})
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to get file info from Telegram: {e}")
-        return {}
 
 # Contoh penggunaan lokal (bisa dihapus nanti)
 if __name__ == "__main__":
