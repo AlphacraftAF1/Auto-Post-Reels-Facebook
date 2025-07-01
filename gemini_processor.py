@@ -19,8 +19,8 @@ def process_caption_with_gemini(raw_caption, media_type="media"):
     Memproses teks caption menggunakan model Gemini untuk menambahkan emoji dan hashtag.
     """
     try:
-        configure_gemini() # Panggil konfigurasi di awal fungsi
-    except ValueError: # Tangani jika API Key tidak ada
+        configure_gemini()
+    except ValueError:
         logger.error("Gemini API key is missing. Skipping Gemini processing and using fallback default.")
         return raw_caption if raw_caption else f"{media_type.capitalize()} dari Telegram Bot"
 
@@ -34,8 +34,6 @@ def process_caption_with_gemini(raw_caption, media_type="media"):
     if raw_caption:
         input_caption_prompt = f"Teks asli dari pengguna: \"{raw_caption}\"\n"
     else:
-        # Jika raw_caption kosong (setelah filter awal di main.py), instruksi ini seharusnya tidak terpakai
-        # karena main.py akan pakai fallback emoji+hashtag. Tapi untuk berjaga-jaga:
         input_caption_prompt = f"Teks asli dari pengguna KOSONG. Harap buatkan caption baru yang menarik dan relevan untuk sebuah {media_type} ini, tanpa bertanya balik atau meminta informasi tambahan."
 
 
