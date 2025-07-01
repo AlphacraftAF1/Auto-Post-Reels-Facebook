@@ -33,7 +33,7 @@ POSTED_MEDIA_FILE = 'posted_media.json'
 LAST_UPDATE_OFFSET_FILE = 'last_update_offset.txt'
 
 # --- Batasan Posting per Run ---
-MAX_POSTS_PER_RUN = 1 # Ubah nilai ini sesuai keinginan Anda (misal: 1, 2, atau 3)
+MAX_POSTS_PER_RUN = 3 # Ubah nilai ini sesuai keinginan Anda (misal: 1, 2, atau 3)
 
 # --- Fungsi Pembantu ---
 def load_posted_media():
@@ -41,32 +41,39 @@ def load_posted_media():
     if os.path.exists(POSTED_MEDIA_FILE):
         with open(POSTED_MEDIA_FILE, 'r') as f:
             try:
+                logging.info(f"Memuat media yang sudah diposting dari: {os.path.abspath(POSTED_MEDIA_FILE)}")
                 return json.load(f)
             except json.JSONDecodeError:
                 logging.warning(f"File {POSTED_MEDIA_FILE} rusak atau kosong. Membuat yang baru.")
                 return {}
+    logging.info(f"File {POSTED_MEDIA_FILE} tidak ditemukan. Membuat yang baru.")
     return {}
 
 def save_posted_media(posted_media_data):
     """Menyimpan daftar media yang sudah diposting ke file JSON."""
     with open(POSTED_MEDIA_FILE, 'w') as f:
         json.dump(posted_media_data, f, indent=4)
+    logging.info(f"Media yang sudah diposting disimpan ke: {os.path.abspath(POSTED_MEDIA_FILE)}")
 
 def load_last_update_offset():
     """Memuat offset update terakhir dari file teks."""
     if os.path.exists(LAST_UPDATE_OFFSET_FILE):
         with open(LAST_UPDATE_OFFSET_FILE, 'r') as f:
             try:
-                return int(f.read().strip())
+                offset = int(f.read().strip())
+                logging.info(f"Memuat offset terakhir dari: {os.path.abspath(LAST_UPDATE_OFFSET_FILE)} -> {offset}")
+                return offset
             except ValueError:
                 logging.warning(f"File {LAST_UPDATE_OFFSET_FILE} berisi nilai tidak valid. Mengatur offset ke 0.")
                 return 0
+    logging.info(f"File {LAST_UPDATE_OFFSET_FILE} tidak ditemukan. Mengatur offset ke 0.")
     return 0
 
 def save_last_update_offset(offset):
     """Menyimpan offset update terakhir ke file teks."""
     with open(LAST_UPDATE_OFFSET_FILE, 'w') as f:
         f.write(str(offset))
+    logging.info(f"Offset terakhir disimpan ke: {os.path.abspath(LAST_UPDATE_OFFSET_FILE)} -> {offset}")
 
 def send_telegram_notification(message):
     """Mengirim notifikasi ke Telegram."""
@@ -110,6 +117,18 @@ def run_autopost():
 
         logging.info(f"Ditemukan {len(new_media_updates)} media baru yang potensial untuk diproses.")
         
+        # --- Prioritaskan Foto sebelum Video ---
+        # Urutkan media agar foto diproses terlebih dahulu, kemudian video.
+        # Jika ada video yang merupakan Reels, bisa diberi prioritas lebih tinggi dari video reguler.
+        # Catatan: Jika Anda ingin memproses media terbaru (berdasarkan update_id) secara mutlak,
+        # dan MAX_POSTS_PER_RUN = 1, Anda bisa menghapus bagian pengurutan ini.
+        # Namun, jika MAX_POSTS_PER_RUN > 1 dan Anda ingin prioritas jenis media, pertahankan ini.
+        new_media_updates.sort(key=lambda x: (
+            0 if x['type'] == 'photo' else # Foto memiliki prioritas tertinggi (0)
+            1 if x['type'] == 'video' and video_utils.is_reel(x['file_path']) else # Reels (video) prioritas kedua (1)
+            2 # Video reguler prioritas terendah (2)
+        ))
+
         # Batasi jumlah media yang akan diproses per run
         media_to_process = new_media_updates[:MAX_POSTS_PER_RUN]
         logging.info(f"Memproses {len(media_to_process)} media dari total {len(new_media_updates)} media baru yang tersedia.")
@@ -137,8 +156,10 @@ def run_autopost():
                 is_reel = False
                 if media_type == 'video':
                     logging.info("Menganalisis video untuk deteksi Reels...")
-                    if video_utils.is_reel(media_path):
-                        is_reel = True
+                    # Panggil is_reel lagi karena pengurutan di atas hanya untuk menentukan prioritas,
+                    # dan is_reel mungkin perlu membaca file lagi untuk memastikan.
+                    is_reel = video_utils.is_reel(media_path)
+                    if is_reel:
                         logging.info("Video dideteksi sebagai Reels.")
                     else:
                         logging.info("Video dideteksi sebagai Video Reguler.")
