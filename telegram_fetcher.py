@@ -1,215 +1,93 @@
-import requests
-import os
+import google.generativeai as genai
+import random
 import logging
-from urllib.parse import urlparse
+import os
 
 # Konfigurasi logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def send_message(bot_token, chat_id, text):
-    """Mengirim pesan teks ke chat Telegram tertentu."""
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {
-        'chat_id': chat_id,
-        'text': text,
-        'parse_mode': 'Markdown'
-    }
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status() # Akan memunculkan HTTPError untuk kode status 4xx/5xx
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Gagal mengirim pesan Telegram: {e}")
-        raise
+# Daftar caption fallback lucu
+FALLBACK_CAPTIONS = [
+    "Ketika ide muncul di kepala, tapi eksekusinya butuh kopi. ☕",
+    "Hidup itu seperti Reels, kadang cepat, kadang lambat, tapi selalu ada momennya. ✨",
+    "Melihat ini, saya jadi ingin rebahan sambil ngemil. Ada yang sama? 😴",
+    "Ini bukan sekadar postingan, ini adalah seni. Atau mungkin cuma gabut. 🤔",
+    "Terkadang, yang kita butuhkan hanyalah senyuman dan koneksi internet yang stabil. 😊",
+    "Reels ini dipersembahkan oleh tim rebahan profesional. Selamat menikmati! 🛋️",
+    "Jangan lupa bahagia, karena hidup ini terlalu singkat untuk tidak tertawa. 😂",
+    "Mungkin ini tanda untuk istirahat sejenak dan menikmati hal-hal kecil. 🍃",
+    "Kalau ada yang bilang ini tidak penting, berarti mereka belum tahu seni menikmati hidup. 😉",
+    "Selamat datang di dunia absurditas yang menyenangkan. Siap-siap terhibur! 🥳"
+]
 
-def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
+def process_caption(original_caption, gemini_api_key):
     """
-    Mengambil update terbaru dari Telegram, mengunduh media, dan mengembalikan informasinya.
-    Mengabaikan media yang sudah diposting atau duplikat dalam batch yang sama.
-    Prioritas: Media terbaru (update_id tertinggi) akan diproses terlebih dahulu.
+    Memproses caption menggunakan Gemini API untuk membersihkan dan membuatnya menarik.
+    Jika caption kosong atau generik, gunakan fallback caption.
     """
-    url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
-    params = {
-        'offset': last_offset + 1, # Mulai dari update setelah yang terakhir diproses
-        'limit': 50, # Ambil hingga 50 update
-        'timeout': 30 # Timeout untuk permintaan
-    }
-    
-    new_media_updates = []
-    current_max_offset = last_offset
-    processed_unique_ids_in_batch = set() # Melacak ID unik dalam batch ini untuk menghindari duplikasi
+    if not gemini_api_key:
+        logging.warning("Kunci API Gemini tidak ditemukan. Menggunakan caption asli atau fallback.")
+        if not original_caption or original_caption.strip() == "":
+            return random.choice(FALLBACK_CAPTIONS)
+        return original_caption
+
+    genai.configure(api_key=gemini_api_key)
+    model = genai.GenerativeModel('gemini-2.0-flash')
+
+    # Cek apakah caption kosong atau generik (misalnya, hanya spasi)
+    if not original_caption or original_caption.strip() == "":
+        logging.info("Caption asli kosong atau generik. Menggunakan fallback caption.")
+        return random.choice(FALLBACK_CAPTIONS)
+
+    # Prompt untuk Gemini API
+    prompt = (
+        f"Saya memiliki caption berikut dari sebuah video atau foto yang akan diposting ke Facebook Reels:\n\n"
+        f"'{original_caption}'\n\n"
+        f"Tolong bersihkan caption ini dari informasi yang tidak relevan (seperti ID internal, URL yang tidak perlu, atau teks sistem), "
+        f"dan buatlah lebih menarik, lucu, atau relevan untuk audiens Facebook Reels. "
+        f"Tambahkan emoji yang sesuai. Pastikan caption tidak terlalu panjang (maksimal 200 karakter). "
+        f"Jika caption sudah bagus, cukup sempurnakan sedikit. "
+        f"Berikan hanya caption yang sudah diproses, tanpa tambahan teks atau penjelasan."
+    )
 
     try:
-        response = requests.get(url, params=params, timeout=40)
-        response.raise_for_status() # Angkat HTTPError untuk kode status 4xx/5xx
-        updates = response.json().get('result', [])
+        logging.info("Mengirim caption ke Gemini API untuk diproses...")
+        response = model.generate_content(prompt)
+        processed_text = response.text.strip()
 
-        if not updates:
-            logging.info("Tidak ada update baru dari Telegram.")
-            return [], last_offset
+        # Batasi panjang caption yang diproses
+        if len(processed_text) > 200:
+            processed_text = processed_text[:197] + "..." # Potong dan tambahkan elipsis
 
-        # Urutkan update dari yang paling baru ke yang paling lama (reverse=True)
-        # Ini memastikan bahwa media terbaru yang diforward akan diproses duluan
-        updates.sort(key=lambda u: u['update_id'], reverse=True)
-
-        for update in updates:
-            current_max_offset = max(current_max_offset, update['update_id'])
-            message = update.get('message')
-            if not message:
-                continue
-
-            chat_id = message.get('chat', {}).get('id')
-            if chat_id != target_chat_id:
-                logging.debug(f"Melewatkan pesan dari chat ID {chat_id} (bukan target {target_chat_id}).")
-                continue
-
-            media_info = None
-            file_id = None
-            file_unique_id = None
-            media_type = None
-            caption = message.get('caption', message.get('text', '')) # Caption untuk foto/video, text untuk pesan biasa
-
-            if 'video' in message:
-                video = message['video']
-                file_id = video['file_id']
-                file_unique_id = video['file_unique_id']
-                media_type = 'video'
-                width = video.get('width')
-                height = video.get('height')
-                duration = video.get('duration')
-                logging.info(f"Ditemukan video (ID Unik: {file_unique_id})")
-            elif 'photo' in message:
-                # Ambil foto dengan resolusi tertinggi
-                photo = message['photo'][-1]
-                file_id = photo['file_id']
-                file_unique_id = photo['file_unique_id']
-                media_type = 'photo'
-                width = photo.get('width')
-                height = photo.get('height')
-                duration = None # Foto tidak memiliki durasi
-                logging.info(f"Ditemukan foto (ID Unik: {file_unique_id})")
-            else:
-                logging.debug(f"Melewatkan pesan tanpa video atau foto (ID Update: {update['update_id']}).")
-                continue
-
-            # Cek apakah media ini sudah diposting sebelumnya (dari file)
-            if file_unique_id in posted_media_ids:
-                logging.info(f"Media (ID Unik: {file_unique_id}) sudah diposting sebelumnya. Melewatkan.")
-                continue
-            
-            # Cek apakah media ini sudah diproses dalam batch getUpdates saat ini
-            if file_unique_id in processed_unique_ids_in_batch:
-                logging.info(f"Media (ID Unik: {file_unique_id}) adalah duplikat dalam batch ini. Melewatkan.")
-                continue
-
-            # Unduh media
-            file_path = download_telegram_file(bot_token, file_id, file_unique_id, media_type)
-            if file_path:
-                media_info = {
-                    'update_id': update['update_id'],
-                    'file_id': file_id,
-                    'file_unique_id': file_unique_id,
-                    'file_path': file_path,
-                    'type': media_type,
-                    'caption': caption,
-                    'width': width,
-                    'height': height,
-                    'duration': duration
-                }
-                new_media_updates.append(media_info)
-                processed_unique_ids_in_batch.add(file_unique_id) # Tambahkan ke set untuk melacak duplikasi dalam batch
-            else:
-                logging.error(f"Gagal mengunduh media {file_unique_id}.")
-
-        # Karena kita ingin memproses media terbaru terlebih dahulu,
-        # dan main.py akan mengambil [:MAX_POSTS_PER_RUN],
-        # kita tidak perlu mengurutkan ulang di sini ke ASC.
-        # Biarkan saja urutan yang sudah terbalik dari update_id DESC.
-        # Atau, jika main.py punya prioritas jenis media, kita bisa mengurutkan di main.py.
-        # Untuk kasus "yang terbaru (paling atas)", urutan DESC ini sudah benar.
-
-        return new_media_updates, current_max_offset
-
-    except requests.exceptions.ConnectionError as e:
-        logging.error(f"Kesalahan koneksi saat mengambil update Telegram: {e}")
-        return [], last_offset
-    except requests.exceptions.Timeout:
-        logging.error("Permintaan getUpdates Telegram timeout.")
-        return [], last_offset
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Kesalahan saat mengambil update Telegram: {e}")
-        return [], last_offset
+        logging.info(f"Caption dari Gemini: {processed_text}")
+        return processed_text
     except Exception as e:
-        logging.error(f"Terjadi kesalahan tak terduga saat mengambil update Telegram: {e}", exc_info=True)
-        return [], last_offset
-
-def download_telegram_file(bot_token, file_id, file_unique_id, media_type):
-    """Mengunduh file dari Telegram menggunakan file_id."""
-    get_file_url = f"https://api.telegram.org/bot{bot_token}/getFile?file_id={file_id}"
-    try:
-        response = requests.get(get_file_url, timeout=10)
-        response.raise_for_status()
-        file_info = response.json().get('result')
-        if not file_info:
-            logging.error(f"Tidak dapat mendapatkan info file untuk file_id: {file_id}")
-            return None
-
-        file_path_tg = file_info.get('file_path')
-        if not file_path_tg:
-            logging.error(f"File path tidak ditemukan untuk file_id: {file_id}")
-            return None
-
-        download_url = f"https://api.telegram.org/file/bot{bot_token}/{file_path_tg}"
-        
-        # Tentukan ekstensi file berdasarkan tipe media
-        if media_type == 'video':
-            ext = os.path.splitext(urlparse(file_path_tg).path)[1] or '.mp4'
-        elif media_type == 'photo':
-            ext = os.path.splitext(urlparse(file_path_tg).path)[1] or '.jpg'
-        else:
-            ext = '.bin' # Fallback
-
-        local_filename = f"{file_unique_id}{ext}"
-        
-        logging.info(f"Mengunduh {media_type} dari: {download_url} ke {local_filename}")
-        file_response = requests.get(download_url, stream=True, timeout=60)
-        file_response.raise_for_status()
-
-        with open(local_filename, 'wb') as f:
-            for chunk in file_response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        logging.info(f"Berhasil mengunduh file: {local_filename}")
-        return local_filename
-
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Gagal mengunduh file Telegram {file_id}: {e}")
-        return None
-    except Exception as e:
-        logging.error(f"Terjadi kesalahan tak terduga saat mengunduh file Telegram: {e}", exc_info=True)
-        return None
+        logging.error(f"Gagal memproses caption dengan Gemini API: {e}. Menggunakan caption asli atau fallback.", exc_info=True)
+        if not original_caption or original_caption.strip() == "":
+            return random.choice(FALLBACK_CAPTIONS)
+        return original_caption
 
 if __name__ == '__main__':
     # Contoh penggunaan (untuk pengujian lokal)
-    # Pastikan Anda memiliki BOT_TOKEN dan CHAT_ID yang valid di lingkungan Anda
-    # atau ganti dengan nilai langsung untuk pengujian.
-    TEST_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN_TEST', 'YOUR_BOT_TOKEN_HERE')
-    TEST_CHAT_ID = int(os.getenv('TELEGRAM_CHAT_ID_TEST', 'YOUR_CHAT_ID_HERE')) # Ganti dengan ID chat Anda
+    TEST_GEMINI_API_KEY = os.getenv('GEMINI_API_KEY_TEST', 'YOUR_GEMINI_API_KEY_HERE') # Ganti dengan kunci API Anda
     
-    if TEST_BOT_TOKEN == 'YOUR_BOT_TOKEN_HERE' or TEST_CHAT_ID == 'YOUR_CHAT_ID_HERE':
-        logging.warning("Variabel lingkungan TELEGRAM_BOT_TOKEN_TEST atau TELEGRAM_CHAT_ID_TEST tidak diatur. Tidak dapat menjalankan contoh.")
+    if TEST_GEMINI_API_KEY == 'YOUR_GEMINI_API_KEY_HERE':
+        logging.warning("Variabel lingkungan GEMINI_API_KEY_TEST tidak diatur. Tidak dapat menjalankan contoh Gemini Processor.")
     else:
-        logging.info("Menjalankan contoh telegram_fetcher.py...")
-        # Buat dummy posted_media_ids untuk pengujian
-        dummy_posted_media = {'AgADBAADgqwxG8g0fVf': {'caption': 'Test', 'post_id': '123'}}
+        logging.info("Menjalankan contoh gemini_processor.py...")
         
-        # Ambil update dengan offset 0 untuk mendapatkan semua update terbaru
-        media_list, new_offset = fetch_new_media(TEST_BOT_TOKEN, TEST_CHAT_ID, 0, dummy_posted_media)
-        
-        logging.info(f"Ditemukan {len(media_list)} media baru.")
-        for media in media_list:
-            logging.info(f"Tipe: {media['type']}, Path: {media['file_path']}, Caption: {media['caption'][:50]}...")
-            # Hapus file yang diunduh setelah pengujian
-            if os.path.exists(media['file_path']):
-                os.remove(media['file_path'])
-                logging.info(f"File pengujian dihapus: {media['file_path']}")
-        logging.info(f"Offset terakhir yang diproses: {new_offset}")
+        # Contoh caption kosong
+        caption1 = ""
+        print(f"Caption asli: '{caption1}' -> Diproses: '{process_caption(caption1, TEST_GEMINI_API_KEY)}'")
+
+        # Contoh caption generik
+        caption2 = "Photo dari Telegram"
+        print(f"Caption asli: '{caption2}' -> Diproses: '{process_caption(caption2, TEST_GEMINI_API_KEY)}'")
+
+        # Contoh caption dengan teks
+        caption3 = "Video lucu kucing main bola. #kucing #lucu #gemoy"
+        print(f"Caption asli: '{caption3}' -> Diproses: '{process_caption(caption3, TEST_GEMINI_API_KEY)}'")
+
+        # Contoh caption yang terlalu panjang
+        long_caption = "Ini adalah caption yang sangat panjang sekali, lebih dari dua ratus karakter, yang dibuat hanya untuk menguji apakah fungsi pemrosesan caption akan memotongnya dengan benar dan menambahkan elipsis di bagian akhir. Semoga ini bekerja dengan baik dan tidak menimbulkan masalah. Kita akan lihat bagaimana hasilnya nanti."
+        print(f"Caption asli: '{long_caption}' -> Diproses: '{process_caption(long_caption, TEST_GEMINI_API_KEY)}'")
