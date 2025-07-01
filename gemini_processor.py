@@ -1,6 +1,7 @@
 import google.generativeai as genai
 import random
 import logging
+import os
 
 # Konfigurasi logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
