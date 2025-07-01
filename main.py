@@ -5,7 +5,7 @@ import json # Untuk posted.json, meskipun di alur ini mungkin kita tidak cek dup
              # Tapi tetap bagus untuk jaga-jaga jika ada ide filter di masa depan
 import logging # Tambahkan logging untuk debug
 
-from telegram_fetcher import get_latest_video_from_bot_chat, get_video_info_from_telegram_file
+from telegram_fetcher import get_latest_video_from_bot_chat
 from video_utils import validate_video
 from reels_uploader import upload_reel
 from telegram_notify import send_telegram # Notifikasi ke Telegram
