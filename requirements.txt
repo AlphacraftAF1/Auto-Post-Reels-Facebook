@@ -1,4 +1,0 @@
-ffmpeg-python
-requests
-python-telegram-bot
-google-generativeai # <-- BARU
