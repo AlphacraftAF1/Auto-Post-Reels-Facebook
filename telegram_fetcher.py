@@ -65,32 +65,43 @@ def get_latest_media_from_bot_chat(bot_token, chat_id, output_folder):
         if updates:
             max_update_id_in_batch = max(u['update_id'] for u in updates)
         
-        latest_media_message = None
+        # --- PERUBAHAN DI SINI ---
+        latest_media_update_object = None # Ini akan menyimpan seluruh objek 'update'
+        # --- AKHIR PERUBAHAN ---
+
         media_type = None
 
-        for update in sorted(updates, key=lambda x: x['update_id'], reverse=True):
-            if 'message' in update:
-                message = update['message']
+        # Iterasi melalui update dari yang terbaru ke terlama
+        for update_item in sorted(updates, key=lambda x: x['update_id'], reverse=True):
+            if 'message' in update_item:
+                message = update_item['message']
                 if str(message['chat']['id']) == str(chat_id):
+                    # Kita menemukan media dari chat yang benar
                     if 'video' in message:
-                        latest_media_message = message
+                        latest_media_update_object = update_item # Simpan seluruh objek update
                         media_type = 'video'
-                        logger.info(f"Found a video message (Update ID: {update['update_id']}).")
-                        break
+                        logger.info(f"Found a video message (Update ID: {update_item['update_id']}).")
+                        break # Hentikan loop, kita sudah menemukan media terbaru yang valid
                     elif 'photo' in message:
-                        latest_media_message = message
+                        latest_media_update_object = update_item # Simpan seluruh objek update
                         media_type = 'photo'
-                        logger.info(f"Found a photo message (Update ID: {update['update_id']}).")
-                        break
+                        logger.info(f"Found a photo message (Update ID: {update_item['update_id']}).")
+                        break # Hentikan loop, kita sudah menemukan media terbaru yang valid
         
-        if latest_media_message:
-            save_last_update_offset(latest_media_message['update_id'])
-        else:
+        # --- PERUBAHAN DI SINI ---
+        # Simpan offset berdasarkan update_id dari objek update yang ditemukan
+        if latest_media_update_object:
+            save_last_update_offset(latest_media_update_object['update_id'])
+        else: # Jika tidak ada media yang ditemukan dalam batch ini
             save_last_update_offset(max_update_id_in_batch)
 
-        if not latest_media_message:
+        if not latest_media_update_object: # Sekarang cek objek update_object, bukan message
             logger.info(f"No new video or photo message found from CHAT_ID '{chat_id}' in fetched updates.")
             return None, None
+        
+        # Dapatkan objek message dari update_object yang ditemukan
+        latest_media_message = latest_media_update_object['message']
+        # --- AKHIR PERUBAHAN ---
 
         file_id = None
         file_unique_id = None
