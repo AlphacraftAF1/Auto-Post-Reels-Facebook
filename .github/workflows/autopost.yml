@@ -12,6 +12,10 @@ jobs:
     steps:
     - name: Checkout repository # Mengambil kode dari repositori GitHub
       uses: actions/checkout@v4
+      with:
+        # Penting: Menggunakan personal access token untuk izin menulis ke repositori
+        # Ganti YOUR_GITHUB_TOKEN_SECRET dengan nama secret GitHub Anda
+        token: ${{ secrets.REPO_ACCESS_TOKEN }} 
 
     - name: Set up Python # Mengatur lingkungan Python
       uses: actions/setup-python@v5
@@ -27,13 +31,6 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y ffmpeg
 
-    - name: Download previous artifacts # Mengunduh file persistensi dari run sebelumnya
-      uses: actions/download-artifact@v4
-      with:
-        name: autopost-data # Nama artifact yang sama dengan yang diunggah
-        path: . # Mengunduh ke direktori root repositori
-      continue-on-error: true # Tambahkan ini agar workflow tetap berjalan meskipun download gagal
-
     - name: Run AutoPost Script # Menjalankan skrip utama
       env: # Mengatur variabel lingkungan dari GitHub Secrets
         FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
@@ -44,12 +41,14 @@ jobs:
       run: |
         python main.py
 
-    - name: Upload artifacts # Mengunggah file persistensi untuk run berikutnya
-      uses: actions/upload-artifact@v4
-      with:
-        name: autopost-data # Nama artifact
-        path: |
-          posted_media.json
-          last_update_offset.txt
-        retention-days: 7 # Opsional: Berapa lama artifact akan disimpan (default 90 hari)
-      continue-on-error: true # Tambahkan ini agar workflow tetap berjalan meskipun upload gagal
+    - name: Commit and Push changes # Meng-commit dan me-push file persistensi ke repositori
+      run: |
+        git config user.name "GitHub Actions Bot"
+        git config user.email "actions@github.com"
+        git add posted_media.json last_update_offset.txt
+        # '|| true' digunakan agar langkah ini tidak gagal jika tidak ada perubahan untuk di-commit
+        git commit -m "AutoPost: Update posted media and offset" || true 
+        git push
+      env:
+        # Pastikan REPO_ACCESS_TOKEN adalah Personal Access Token dengan izin 'repo'
+        GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }} 
