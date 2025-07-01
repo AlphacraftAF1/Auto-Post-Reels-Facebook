@@ -10,6 +10,7 @@ from video_utils import validate_video, get_video_duration
 from facebook_uploader import upload_reel, upload_regular_video, upload_photo
 from telegram_notify import send_telegram
 from gemini_processor import process_caption_with_gemini
+from media_history import add_posted_media, is_media_posted # <-- Perubahan import di sini
 
 # Konfigurasi
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -62,20 +63,28 @@ async def main_async():
         media_type = media_info.get('type')
         raw_caption = media_info.get('caption', None)
         
+        # Dapatkan ID unik media dari Telegram untuk pengecekan duplikasi
+        media_unique_id = media_info.get('file_unique_id') # <-- Dapatkan ID unik
+
+        # --- Tambahan: Cek Duplikasi di sini ---
+        if is_media_posted(media_unique_id): # <-- Panggil fungsi baru
+            send_telegram(f"🔁 Media sudah pernah diposting (ID: {media_unique_id}). Melewati.")
+            logger.info(f"Media with ID '{media_unique_id}' already posted. Skipping.")
+            if os.path.exists(downloaded_media_path):
+                os.remove(downloaded_media_path)
+            return
+        # --- Akhir Tambahan ---
+            
         processed_caption = ""
-        # --- PERUBAHAN DI SINI: Logika penentuan caption yang lebih cerdas ---
-        # Cek apakah raw_caption kosong atau merupakan salah satu default generik Telegram
         if not raw_caption or \
            raw_caption.strip() == "" or \
-           raw_caption.strip().lower() in [g.lower() for g in GENERIC_TELEGRAM_DEFAULTS]: # Ubah ke lowercase untuk perbandingan
+           raw_caption.strip().lower() in [g.lower() for g in GENERIC_TELEGRAM_DEFAULTS]:
             
             logger.info(f"Raw caption is empty or generic Telegram default ('{raw_caption}'). Generating generic emoji+hashtag caption.")
             processed_caption = random.choice(GENERIC_EMOJI_HASHTAG_CAPTIONS)
         else:
-            # Jika ada raw_caption yang valid (bukan generik default), baru panggil Gemini untuk memprosesnya
             logger.info(f"Raw caption detected: '{raw_caption}'. Calling Gemini to process it.")
             processed_caption = process_caption_with_gemini(raw_caption, media_type=media_type)
-        # --- AKHIR PERUBAHAN ---
 
         logger.info(f"Media ditemukan: Tipe={media_type}, Keterangan='{raw_caption}' (Final Processed: '{processed_caption}')")
         send_telegram(f"📥 Media ditemukan: '{raw_caption}'. Tipe: {media_type}. Menggunakan caption: '{processed_caption}'.")
@@ -84,11 +93,11 @@ async def main_async():
         upload_success = False
         post_id = None
         
-        final_description = processed_caption 
+        final_description = processed_caption
 
         if media_type == 'video':
             logger.info(f"Processing video: {downloaded_media_path}")
-            if validate_video(downloaded_media_path): # Cek validasi untuk Reels
+            if validate_video(downloaded_media_path):
                 send_telegram("🎥 Video cocok untuk Reels. Mencoba mengupload sebagai Reels...")
                 upload_success, post_id = upload_reel(downloaded_media_path, final_description)
                 post_type = "Reels"
@@ -113,6 +122,7 @@ async def main_async():
         if upload_success:
             send_telegram(f"✅ {post_type} berhasil diposting ke Facebook!\nJudul: {processed_caption}\nPost ID: {post_id}")
             logger.info(f"{post_type} posted successfully: {processed_caption}, Post ID: {post_id}")
+            add_posted_media(media_unique_id) # <-- Tambahkan ID unik ke riwayat setelah berhasil
         else:
             send_telegram(f"❌ Gagal upload {post_type} ke Facebook: '{processed_caption}'. Coba periksa log.")
             logger.error(f"Failed to upload {post_type}: {processed_caption}")
