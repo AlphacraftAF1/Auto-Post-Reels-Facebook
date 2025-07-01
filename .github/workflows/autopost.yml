@@ -49,7 +49,7 @@ jobs:
         path: |
           posted.json
           last_update_offset.txt
-        key: ${{ runner.os }}-autopost-history-v1 # Kunci konsisten untuk versi cache
+        key: ${{ runner.os }}-autopost-history-v1 # Kunci konsisten untuk versi cache (ubah v1 ke v2 dst jika Anda mereset cache secara manual)
         restore-keys: |
           ${{ runner.os }}-autopost-history- # Fallback jika kunci tidak ditemukan
 
