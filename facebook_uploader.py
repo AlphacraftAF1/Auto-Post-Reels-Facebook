@@ -134,7 +134,7 @@ def upload_reel(file_path, caption, access_token, page_id):
         logging.info("Memulai fase upload Reels (transfer)...")
         with open(file_path, 'rb') as f:
             headers = {
-                'Authorization': f'OAuth {access_token}',
+                'Offset': '0',
                 'Content-Type': 'application/octet-stream'
             }
             transfer_response = requests.post(upload_url, data=f, headers=headers, timeout=300)
