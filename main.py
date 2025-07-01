@@ -12,8 +12,6 @@ from telegram_notify import send_telegram
 
 # Konfigurasi
 KEYWORDS = [
-    "funny cat shorts",
-    "funny dog shorts",
     "meme shorts",
     "meme indonesia short",
     "memes"
