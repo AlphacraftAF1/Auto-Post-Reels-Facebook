@@ -17,7 +17,7 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 VIDEO_FOLDER = "videos" # Folder untuk menyimpan media yang diunduh sementara
 
-MAX_VIDEO_SIZE_MB = 20 # Batas ukuran video dalam MB (misalnya 20MB)
+MAX_MEDIA_SIZE_MB = 15 # Batas ukuran media dalam MB (foto/video), disesuaikan untuk upload yang lebih andal
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -77,14 +77,14 @@ async def main_async():
             return
         # --- Akhir Tambahan ---
             
-        # --- BARU: Validasi Ukuran File Video/Foto ---
+        # --- BARU: Validasi Ukuran File Media ---
         file_size_bytes = os.path.getsize(downloaded_media_path)
         file_size_mb = file_size_bytes / (1024 * 1024)
         logger.info(f"Ukuran file media: {file_size_mb:.2f} MB")
 
-        if file_size_mb > MAX_VIDEO_SIZE_MB:
-            send_telegram(f"⚠️ Ukuran media ({file_size_mb:.2f} MB) melebihi batas {MAX_VIDEO_SIZE_MB} MB. Melewati.")
-            logger.warning(f"Media size {file_size_mb:.2f} MB exceeds max limit {MAX_VIDEO_SIZE_MB} MB. Skipping.")
+        if file_size_mb > MAX_MEDIA_SIZE_MB: # Gunakan MAX_MEDIA_SIZE_MB
+            send_telegram(f"⚠️ Ukuran media ({file_size_mb:.2f} MB) melebihi batas {MAX_MEDIA_SIZE_MB} MB. Melewati.")
+            logger.warning(f"Media size {file_size_mb:.2f} MB exceeds max limit {MAX_MEDIA_SIZE_MB} MB. Skipping.")
             if os.path.exists(downloaded_media_path):
                 os.remove(downloaded_media_path)
             return
