@@ -5,30 +5,40 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Konfigurasi Gemini API
-API_KEY = os.getenv("GEMINI_API_KEY")
-
-if API_KEY:
-    genai.configure(api_key=API_KEY)
-else:
-    logger.error("GEMINI_API_KEY not set. Gemini features will be unavailable.")
+def configure_gemini():
+    """Mengkonfigurasi Gemini API dengan kunci dari environment variable."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        logger.error("GEMINI_API_KEY tidak ditemukan di environment variables.")
+        raise ValueError("GEMINI_API_KEY is not set.")
+    genai.configure(api_key=api_key)
+    logger.info("Gemini API dikonfigurasi.")
 
 def process_caption_with_gemini(raw_caption, media_type="media"):
     """
-    Memproses caption menggunakan Gemini API:
-    - Membersihkan tautan promosi/spam.
-    - Menghasilkan caption baru jika kosong atau tidak relevan.
-    - Menambahkan hashtag umum yang relevan.
+    Memproses teks caption menggunakan model Gemini untuk menambahkan emoji dan hashtag.
     """
-    if not API_KEY:
-        logger.error("Gemini API key is missing. Skipping Gemini processing and using default caption.")
-        return f"{media_type.capitalize()} dari Telegram Bot"
+    try:
+        configure_gemini() # Panggil konfigurasi di awal fungsi
+    except ValueError: # Tangani jika API Key tidak ada
+        logger.error("Gemini API key is missing. Skipping Gemini processing and using fallback default.")
+        return raw_caption if raw_caption else f"{media_type.capitalize()} dari Telegram Bot"
+
 
     # --- PERUBAHAN DI SINI: Ubah model menjadi 'gemini-2.0-flash' ---
     model = genai.GenerativeModel('gemini-2.0-flash')
     # --- AKHIR PERUBAHAN ---
 
-    # ... (sisanya prompt_parts dan try-except block tetap sama) ...
+    # Tentukan bagian prompt untuk caption input
+    input_caption_prompt = ""
+    if raw_caption:
+        input_caption_prompt = f"Teks asli dari pengguna: \"{raw_caption}\"\n"
+    else:
+        # Jika raw_caption kosong (setelah filter awal di main.py), instruksi ini seharusnya tidak terpakai
+        # karena main.py akan pakai fallback emoji+hashtag. Tapi untuk berjaga-jaga:
+        input_caption_prompt = f"Teks asli dari pengguna KOSONG. Harap buatkan caption baru yang menarik dan relevan untuk sebuah {media_type} ini, tanpa bertanya balik atau meminta informasi tambahan."
+
+
     prompt_parts = [
         "Anda adalah AI asisten untuk menulis caption media sosial yang menarik, lucu, dan cocok untuk Facebook Reels/Video/Foto.\n",
         "Tugas Anda adalah: \n",
@@ -54,7 +64,7 @@ def process_caption_with_gemini(raw_caption, media_type="media"):
         "Teks Asli: (kosong)",
         "Output: Momen seru yang bikin harimu lebih berwarna! ✨ #hiburan #seru #dailyvlog #kocak #fyp",
         "--- Teks Asli Sekarang ---",
-        raw_caption if raw_caption else "Tidak ada caption. Buatkan yang baru.",
+        input_caption_prompt,
         "\n--- Output yang Dihasilkan ---"
     ]
     
@@ -62,20 +72,18 @@ def process_caption_with_gemini(raw_caption, media_type="media"):
         logger.info(f"Mengirim caption ke Gemini untuk diproses: '{raw_caption}' (Tipe: {media_type})")
         response = model.generate_content(prompt_parts)
         
-        cleaned_and_generated_caption = response.text.strip()
+        processed_text = response.text.strip()
         
-        if not cleaned_and_generated_caption:
+        if not processed_text:
             logger.warning("Gemini returned an empty caption. Using fallback default.")
-            return f"{media_type.capitalize()} dari Telegram Bot"
+            return raw_caption if raw_caption else f"{media_type.capitalize()} dari Telegram Bot"
 
-        logger.info(f"Caption diproses oleh Gemini. Asli: '{raw_caption}', Diproses: '{cleaned_and_generated_caption}'")
-        return cleaned_and_generated_caption
+        logger.info(f"Caption diproses oleh Gemini. Asli: '{raw_caption}', Diproses: '{processed_text}'")
+        return processed_text
 
     except Exception as e:
         logger.error(f"Error saat memproses caption dengan Gemini: {e}. Menggunakan fallback default.", exc_info=True)
-        # Jika ada error, kembali ke caption asli jika ada, atau default generik
         return raw_caption if raw_caption else f"{media_type.capitalize()} dari Telegram Bot"
 
-# Bagian if __name__ == "__main__": tetap sama
 if __name__ == "__main__":
     pass
