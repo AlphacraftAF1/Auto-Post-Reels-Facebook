@@ -26,6 +26,7 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
     """
     Mengambil update terbaru dari Telegram, mengunduh media, dan mengembalikan informasinya.
     Mengabaikan media yang sudah diposting atau duplikat dalam batch yang sama.
+    Prioritas: Media terbaru (update_id tertinggi) akan diproses terlebih dahulu.
     """
     url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
     params = {
@@ -47,8 +48,9 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
             logging.info("Tidak ada update baru dari Telegram.")
             return [], last_offset
 
-        # Urutkan update dari yang paling lama ke yang paling baru
-        updates.sort(key=lambda u: u['update_id'])
+        # Urutkan update dari yang paling baru ke yang paling lama (reverse=True)
+        # Ini memastikan bahwa media terbaru yang diforward akan diproses duluan
+        updates.sort(key=lambda u: u['update_id'], reverse=True)
 
         for update in updates:
             current_max_offset = max(current_max_offset, update['update_id'])
@@ -118,6 +120,13 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
                 processed_unique_ids_in_batch.add(file_unique_id) # Tambahkan ke set untuk melacak duplikasi dalam batch
             else:
                 logging.error(f"Gagal mengunduh media {file_unique_id}.")
+
+        # Karena kita ingin memproses media terbaru terlebih dahulu,
+        # dan main.py akan mengambil [:MAX_POSTS_PER_RUN],
+        # kita tidak perlu mengurutkan ulang di sini ke ASC.
+        # Biarkan saja urutan yang sudah terbalik dari update_id DESC.
+        # Atau, jika main.py punya prioritas jenis media, kita bisa mengurutkan di main.py.
+        # Untuk kasus "yang terbaru (paling atas)", urutan DESC ini sudah benar.
 
         return new_media_updates, current_max_offset
 
