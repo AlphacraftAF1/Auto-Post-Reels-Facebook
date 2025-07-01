@@ -6,7 +6,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Konfigurasi Gemini API
-# Kunci API akan diambil dari environment variable (GitHub Secrets)
 API_KEY = os.getenv("GEMINI_API_KEY")
 
 if API_KEY:
@@ -14,7 +13,8 @@ if API_KEY:
 else:
     logger.error("GEMINI_API_KEY not set. Gemini features will be unavailable.")
 
-async def process_caption_with_gemini(raw_caption, media_type="media"):
+# --- PERUBAHAN DI SINI: Ubah dari async def menjadi def ---
+def process_caption_with_gemini(raw_caption, media_type="media"):
     """
     Memproses caption menggunakan Gemini API:
     - Membersihkan tautan promosi/spam.
@@ -25,11 +25,9 @@ async def process_caption_with_gemini(raw_caption, media_type="media"):
         logger.error("Gemini API key is missing. Skipping Gemini processing and using default caption.")
         return f"{media_type.capitalize()} dari Telegram Bot"
 
-    # Pilih model. Gemini Flash lebih cepat dan murah.
-    # Gunakan Gemini 1.5 Flash
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    # Model Gemini Flash
+    model = genai.GenerativeModel('gemini-2.0-flash')
 
-    # Buat prompt yang komprehensif untuk Gemini
     prompt_parts = [
         "Anda adalah AI asisten untuk menulis caption media sosial yang menarik, lucu, dan cocok untuk Facebook Reels/Video/Foto.\n",
         "Tugas Anda adalah: \n",
@@ -57,7 +55,9 @@ async def process_caption_with_gemini(raw_caption, media_type="media"):
 
     try:
         logger.info(f"Sending prompt to Gemini for caption processing. Raw: '{raw_caption}'")
-        response = await model.generate_content(prompt_parts)
+        # --- PERUBAHAN DI SINI: Hapus 'await' ---
+        response = model.generate_content(prompt_parts)
+        # --- AKHIR PERUBAHAN ---
         
         cleaned_and_generated_caption = response.text.strip()
         
@@ -71,30 +71,29 @@ async def process_caption_with_gemini(raw_caption, media_type="media"):
 
     except Exception as e:
         logger.error(f"Error calling Gemini API: {e}. Using fallback default.", exc_info=True)
-        # Jika ada error, kembali ke default caption manual
         return f"{media_type.capitalize()} dari Telegram Bot"
 
-# Untuk pengujian lokal yang memerlukan asyncio
+# --- PERUBAHAN DI SINI: Sesuaikan bagian if __name__ == "__main__": agar konsisten ---
 if __name__ == "__main__":
     # Ini hanya untuk pengujian lokal. Pastikan GEMINI_API_KEY diatur di ENV VARS
     # os.environ["GEMINI_API_KEY"] = "YOUR_GEMINI_API_KEY"
     
     # Contoh penggunaan
-    async def test_gemini():
-        # Test case 1: Caption promosi
+    def test_gemini_sync(): # Ubah ke def karena fungsinya sudah synchronous
+        # Setup basic logging for local test
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        
         caption1 = "- Topup Diamond ML , Free Fire , Credit PUBG dan game lainnya? cobain aja di ruangtopup.com"
-        result1 = await process_caption_with_gemini(caption1, "video")
+        result1 = process_caption_with_gemini(caption1, "video")
         print(f"Test 1 - Original: '{caption1}'\nResult: '{result1}'\n")
 
-        # Test case 2: Caption kosong
         caption2 = None
-        result2 = await process_caption_with_gemini(caption2, "foto")
+        result2 = process_caption_with_gemini(caption2, "foto")
         print(f"Test 2 - Original: '{caption2}'\nResult: '{result2}'\n")
 
-        # Test case 3: Caption yang bagus
         caption3 = "Ini adalah momen kocak anjing yang mencoba menangkap ekornya! 🐶"
-        result3 = await process_caption_with_gemini(caption3, "video")
+        result3 = process_caption_with_gemini(caption3, "video")
         print(f"Test 3 - Original: '{caption3}'\nResult: '{result3}'\n")
-
-    import asyncio
-    asyncio.run(test_gemini())
+    
+    test_gemini_sync() # Panggil fungsi synchronous
+# --- AKHIR PERUBAHAN ---
