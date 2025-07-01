@@ -18,7 +18,7 @@ def upload_reel(video_path, description):
         return False, None
 
     # Step 1: Inisiasi upload session
-    init_url = f"https://graph.facebook.com/v23.0/{FB_PAGE_ID}/video_reels"
+    init_url = f"https://graph.facebook.com/v20.0/{FB_PAGE_ID}/video_reels"
     init_params = {
         "upload_phase": "start",
         "access_token": FB_ACCESS_TOKEN
@@ -54,7 +54,7 @@ def upload_reel(video_path, description):
 
         # Step 3: Selesaikan upload dan publish Reels
         print(f"Menyelesaikan upload dan mempublikasikan Reels (ID: {video_id})...")
-        finish_url = f"https://graph.facebook.com/v23.0/{FB_PAGE_ID}/video_reels"
+        finish_url = f"https://graph.facebook.com/v20.0/{FB_PAGE_ID}/video_reels"
         finish_params = {
             "upload_phase": "finish",
             "video_id": video_id,
@@ -62,10 +62,6 @@ def upload_reel(video_path, description):
             "access_token": FB_ACCESS_TOKEN
         }
         
-        # Tambahkan status_update ke description
-        # finish_params["description"] = f"{description}\n\nStatus Update: Ready to publish."
-
-
         finish_response = requests.post(finish_url, params=finish_params)
         finish_response.raise_for_status()
         finish_data = finish_response.json()
@@ -85,26 +81,3 @@ def upload_reel(video_path, description):
     except Exception as e:
         print(f"Error umum saat mengunggah Reels: {e}")
         return False, None
-
-# Contoh penggunaan (tidak bisa langsung jalan tanpa token dan video)
-if __name__ == "__main__":
-    # Untuk menjalankan ini, Anda perlu mengatur environment variables:
-    # export FB_PAGE_ID="your_page_id"
-    # export FB_ACCESS_TOKEN="your_access_token"
-    # Dan memiliki file video di 'videos/test_video.mp4'
-    
-    # from video_utils import validate_video # Jika ingin memvalidasi sebelum upload
-    # test_video_path = "videos/test_video.mp4" # Ganti dengan path video Anda
-    # test_description = "Ini adalah video Reels percobaan dari bot saya!"
-
-    # if os.path.exists(test_video_path):
-    #     if validate_video(test_video_path): # Opsional: Validasi dulu
-    #         success, reel_id = upload_reel(test_video_path, test_description)
-    #         if success:
-    #             print(f"Upload berhasil! Reel ID: {reel_id}")
-    #         else:
-    #             print("Upload gagal.")
-    #     else:
-    #         print("Video tidak valid untuk diupload.")
-    # else:
-    #     print(f"File {test_video_path} tidak ditemukan. Buat dummy video untuk tes.")
