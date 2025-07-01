@@ -63,7 +63,7 @@ def get_latest_media_from_bot_chat(bot_token, chat_id, output_folder):
         max_update_id = current_offset
         if updates:
             max_update_id = max(u['update_id'] for u in updates)
-            save_last_update_offset(max_update_id) # Simpan offset tertinggi yang kita lihat
+            save_last_update_offset(max_update_id)
 
 
         # Cari media terbaru (video atau foto) dari CHAT_ID yang benar
@@ -92,6 +92,8 @@ def get_latest_media_from_bot_chat(bot_token, chat_id, output_folder):
         # Dapatkan file_id dan unique_id berdasarkan tipe media
         file_id = None
         file_unique_id = None
+        largest_photo = None # Tambahkan inisialisasi ini
+
         if media_type == 'video':
             file_id = latest_media_message['video']['file_id']
             file_unique_id = latest_media_message['video']['file_unique_id']
@@ -105,25 +107,25 @@ def get_latest_media_from_bot_chat(bot_token, chat_id, output_folder):
             logger.error("No file_id found for the detected media.")
             return None, None
 
-        # Dapatkan info file untuk URL download
+        # Dapatkan info file untuk URL download (ini akan berisi file_path dan mungkin mime_type)
         get_file_url = f"{base_url}getFile"
         file_response = requests.get(get_file_url, params={'file_id': file_id})
         file_response.raise_for_status()
         file_info = file_response.json().get('result', {})
 
         if not file_info or 'file_path' not in file_info:
-            logger.error(f"Could not get file info for file_id: {file_id}")
+            logger.error(f"Could not get file info from Telegram for file_id: {file_id}")
             return None, None
 
         download_url = f"https://api.telegram.org/file/bot{bot_token}/{file_info['file_path']}"
         
-        # Tentukan ekstensi file berdasarkan mime_type atau tipe media
-        file_extension = "mp4" if media_type == 'video' else "jpg" # Asumsi default
+        # Tentukan ekstensi file dari file_path yang didapat dari Telegram
+        file_extension = "bin" # Default fallback
         if file_info.get('file_path'):
             _, ext = os.path.splitext(file_info['file_path'])
             if ext:
                 file_extension = ext.lstrip('.')
-
+        
         output_filepath = os.path.join(output_folder, f"{file_unique_id}.{file_extension}")
 
         # Pastikan kita tidak mendownload ulang file yang sudah ada (berdasarkan unique ID)
@@ -143,15 +145,19 @@ def get_latest_media_from_bot_chat(bot_token, chat_id, output_folder):
         logger.info(f"{media_type.capitalize()} downloaded successfully to: {output_filepath}")
         
         # Gabungkan info media dari Telegram
+        # Menggunakan .get() untuk mengakses atribut agar tidak KeyError jika tidak ada
+        # Mengambil mime_type dari file_info (lebih reliable) atau membuat perkiraan
         media_metadata = {
-            'type': media_type, # Penting untuk main.py
+            'type': media_type,
             'file_id': file_id,
             'file_unique_id': file_unique_id,
             'caption': latest_media_message.get('caption', f"{media_type.capitalize()} dari Telegram"),
             'duration': latest_media_message['video'].get('duration') if media_type == 'video' else None,
-            'width': latest_media_message['video'].get('width') if media_type == 'video' else (largest_photo['width'] if media_type == 'photo' else None),
-            'height': latest_media_message['video'].get('height') if media_type == 'video' else (largest_photo['height'] if media_type == 'photo' else None),
-            'mime_type': latest_media_message['video'].get('mime_type') if media_type == 'video' else (largest_photo['mime_type'] if media_type == 'photo' else None)
+            'width': latest_media_message['video'].get('width') if media_type == 'video' else (largest_photo.get('width') if media_type == 'photo' else None),
+            'height': latest_media_message['video'].get('height') if media_type == 'video' else (largest_photo.get('height') if media_type == 'photo' else None),
+            # --- PERUBAHAN DI SINI ---
+            'mime_type': file_info.get('mime_type') or (f'image/{file_extension}' if media_type == 'photo' else None)
+            # --- AKHIR PERUBAHAN ---
         }
         return output_filepath, media_metadata
 
