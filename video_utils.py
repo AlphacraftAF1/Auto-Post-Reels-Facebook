@@ -46,7 +46,7 @@ def validate_video(video_path):
         return False
 
     duration = get_video_duration(video_path)
-    if duration is None or duration > 60:
+    if duration is None or duration > 90:
         logger.warning(f"Video is too long ({duration}s) or duration could not be identified.")
         return False
 
