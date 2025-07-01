@@ -72,8 +72,8 @@ def is_reel(video_path):
 
     logging.info(f"Info video {video_path}: Durasi={duration:.2f}s, Dimensi={width}x{height}")
 
-    # Kriteria durasi: <= 90 detik
-    if duration > 90:
+    # Kriteria durasi: <= 60 detik
+    if duration > 60:
         logging.info(f"Video bukan Reels: Durasi ({duration:.2f}s) lebih dari 60 detik.")
         return False
 
