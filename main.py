@@ -33,7 +33,7 @@ POSTED_MEDIA_FILE = 'posted_media.json'
 LAST_UPDATE_OFFSET_FILE = 'last_update_offset.txt'
 
 # --- Batasan Posting per Run ---
-MAX_POSTS_PER_RUN = 1 # Ubah nilai ini sesuai keinginan Anda (misal: 1, 2, atau 3)
+MAX_POSTS_PER_RUN = 3 # Ubah nilai ini sesuai keinginan Anda (misal: 1, 2, atau 3)
 
 # --- Fungsi Pembantu ---
 def load_posted_media():
@@ -123,27 +123,31 @@ def run_autopost():
 
             logging.info(f"Memproses media: {media_path} (ID Unik: {file_unique_id})")
 
-            # 3. Cek Caption (Kosong / Spam / Siap Posting)
-            logging.info("Memproses caption...")
-            processed_caption = gemini_processor.process_caption(original_caption, GEMINI_API_KEY)
-            logging.info(f"Caption akhir: {processed_caption}")
-
-            # 4. Deteksi Reels / Biasa / Foto
-            is_reel = False
-            if media_type == 'video':
-                logging.info("Menganalisis video untuk deteksi Reels...")
-                if video_utils.is_reel(media_path):
-                    is_reel = True
-                    logging.info("Video dideteksi sebagai Reels.")
-                else:
-                    logging.info("Video dideteksi sebagai Video Reguler.")
-            else:
-                logging.info("Media dideteksi sebagai Foto.")
-
-            # 5. Upload ke Facebook
-            logging.info(f"Mengunggah media ke Facebook sebagai {'Reels' if is_reel else media_type.capitalize()}...")
+            post_status = 'failed_upload' # Default status jika terjadi kesalahan
             post_id = None
+            processed_caption = ""
+
             try:
+                # 3. Cek Caption (Kosong / Spam / Siap Posting)
+                logging.info("Memproses caption...")
+                processed_caption = gemini_processor.process_caption(original_caption, GEMINI_API_KEY)
+                logging.info(f"Caption akhir: {processed_caption}")
+
+                # 4. Deteksi Reels / Biasa / Foto
+                is_reel = False
+                if media_type == 'video':
+                    logging.info("Menganalisis video untuk deteksi Reels...")
+                    if video_utils.is_reel(media_path):
+                        is_reel = True
+                        logging.info("Video dideteksi sebagai Reels.")
+                    else:
+                        logging.info("Video dideteksi sebagai Video Reguler.")
+                else:
+                    logging.info("Media dideteksi sebagai Foto.")
+
+                # 5. Upload ke Facebook
+                logging.info(f"Mengunggah media ke Facebook sebagai {'Reels' if is_reel else media_type.capitalize()}...")
+                
                 if is_reel:
                     post_id = facebook_uploader.upload_reel(
                         media_path, processed_caption, FB_ACCESS_TOKEN, FB_PAGE_ID
@@ -165,28 +169,33 @@ def run_autopost():
                         f"Caption: {processed_caption[:100]}...\n"
                         f"Post ID: {post_id}"
                     )
-                    # Simpan ke posted_media.json
-                    posted_media[file_unique_id] = {
-                        'caption': processed_caption,
-                        'post_id': post_id,
-                        'posted_at': datetime.now().isoformat(),
-                        'media_type': media_type,
-                        'is_reel': is_reel
-                    }
-                    save_posted_media(posted_media) # Simpan setelah setiap sukses posting
+                    post_status = 'posted'
                 else:
                     logging.error("Gagal mendapatkan Post ID setelah unggah.")
                     send_telegram_notification(
                         f"❌ Gagal posting ke Facebook untuk media ID unik: {file_unique_id}. Post ID tidak ditemukan."
                     )
+                    post_status = 'failed_upload' # Pastikan status diatur jika post_id None
 
             except Exception as e:
                 logging.error(f"Terjadi kesalahan saat mengunggah media {file_unique_id}: {e}", exc_info=True)
                 send_telegram_notification(
-                    f"❌ Gagal posting ke Facebook untuk media ID unik: {file_unique_id}.\n"
+                    f"❌ Terjadi kesalahan saat posting ke Facebook untuk media ID unik: {file_unique_id}.\n"
                     f"Kesalahan: {str(e)[:200]}..."
                 )
+                post_status = 'failed_upload' # Pastikan status diatur jika ada exception
             finally:
+                # Simpan ke posted_media.json setelah setiap upaya pemrosesan (berhasil atau gagal)
+                posted_media[file_unique_id] = {
+                    'caption': processed_caption,
+                    'post_id': post_id,
+                    'posted_at': datetime.now().isoformat(),
+                    'media_type': media_type,
+                    'is_reel': is_reel if media_type == 'video' else False, # Hanya relevan untuk video
+                    'status': post_status # Tambahkan status
+                }
+                save_posted_media(posted_media) # Simpan setelah setiap media diproses
+
                 # 6. Cleanup: Hapus file lokal setelah selesai
                 if os.path.exists(media_path):
                     os.remove(media_path)
