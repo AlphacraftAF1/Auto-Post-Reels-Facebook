@@ -6,16 +6,18 @@ import asyncio
 import random
 
 from telegram_fetcher import get_latest_media_from_bot_chat
-from video_utils import validate_video, get_video_duration
+from video_utils import validate_video
 from facebook_uploader import upload_reel, upload_regular_video, upload_photo
 from telegram_notify import send_telegram
 from gemini_processor import process_caption_with_gemini
-from media_history import add_posted_media, is_media_posted # Diperbarui: import media_history
+from media_history import add_posted_media, is_media_posted
 
 # Konfigurasi
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 VIDEO_FOLDER = "videos" # Folder untuk menyimpan media yang diunduh sementara
+
+MAX_VIDEO_SIZE_MB = 20 # Batas ukuran video dalam MB (misalnya 20MB)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -75,6 +77,19 @@ async def main_async():
             return
         # --- Akhir Tambahan ---
             
+        # --- BARU: Validasi Ukuran File Video/Foto ---
+        file_size_bytes = os.path.getsize(downloaded_media_path)
+        file_size_mb = file_size_bytes / (1024 * 1024)
+        logger.info(f"Ukuran file media: {file_size_mb:.2f} MB")
+
+        if file_size_mb > MAX_VIDEO_SIZE_MB:
+            send_telegram(f"⚠️ Ukuran media ({file_size_mb:.2f} MB) melebihi batas {MAX_VIDEO_SIZE_MB} MB. Melewati.")
+            logger.warning(f"Media size {file_size_mb:.2f} MB exceeds max limit {MAX_VIDEO_SIZE_MB} MB. Skipping.")
+            if os.path.exists(downloaded_media_path):
+                os.remove(downloaded_media_path)
+            return
+        # --- AKHIR Validasi Ukuran File ---
+        
         processed_caption = ""
         if not raw_caption or \
            raw_caption.strip() == "" or \
