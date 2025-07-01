@@ -23,16 +23,23 @@ def process_caption_with_gemini(raw_caption, media_type="media"):
         logger.error("Gemini API key is missing. Skipping Gemini processing and using default caption.")
         return f"{media_type.capitalize()} dari Telegram Bot"
 
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    model = genai.GenerativeModel('gemini-2.0-flash')
 
-    # --- PERUBAHAN DI SINI: PROMPT YANG LEBIH BAIK ---
+    # --- PERUBAHAN DI SINI: PROMPT YANG LEBIH BAIK UNTUK CAPTION KOSONG ---
+    # Tentukan bagian prompt untuk caption input
+    input_caption_prompt = ""
+    if raw_caption:
+        input_caption_prompt = f"Teks asli dari pengguna: \"{raw_caption}\"\n"
+    else:
+        input_caption_prompt = f"Teks asli dari pengguna KOSONG. Harap buatkan caption baru yang menarik dan relevan untuk sebuah {media_type} ini, tanpa bertanya balik atau meminta informasi tambahan."
+
     prompt_parts = [
         "Anda adalah AI asisten untuk menulis caption media sosial yang menarik, lucu, dan cocok untuk Facebook Reels/Video/Foto.\n",
         "Tugas Anda adalah: \n",
         "1.  Periksa teks yang saya berikan. Jika ada tautan promosi (misal: 'ruangtopup.com', 'linkbio', 'beli sekarang', dll.) atau kata-kata spam, HAPUS SEMUA bagian tersebut. Jangan tinggalkan tautan atau promosi apapun.\n",
-        "2.  **PRIORITASKAN bahasa Indonesia.** Jika teks asli dalam bahasa Indonesia, jawablah dalam bahasa Indonesia. Jika teks asli dalam bahasa Inggris, jawablah dalam bahasa Inggris. Jangan campur bahasa.\n",
-        "3.  Jika teks setelah dibersihkan masih valid dan cukup informatif, cukup TINGKATKAN kualitasnya (misal: buat lebih menarik, lucu) dan tambahkan 3-5 hashtag umum yang relevan (misal: #lucu #viral #foryou #videolucu #hiburan #memes #fotokeren) sesuai dengan konteks media. Jangan membuat caption baru yang radikal jika yang asli sudah oke.\n",
-        "4.  Jika teks setelah dibersihkan menjadi sangat kosong, terlalu pendek (kurang dari 5 karakter), atau terlalu generik, barulah buatkan caption baru yang orisinal, menarik, dan sesuai dengan tipe media (video/foto).\n",
+        "2.  PRIORITASKAN bahasa Indonesia. Jika teks asli dalam bahasa Indonesia, lanjutkan dalam bahasa Indonesia. Jika teks asli dalam bahasa Inggris, jawablah dalam bahasa Inggris. Jangan campur bahasa.\n",
+        "3.  Jika teks setelah dibersihkan masih valid dan cukup informatif, cukup TINGKATKAN kualitasnya (misal: buat lebih menarik, lucu) dan tambahkan 3-5 hashtag umum yang relevan (misal: #lucu #viral #foryou #videokocak #hiburan #memes #fotokeren) sesuai dengan konteks media. Jangan membuat caption baru yang radikal jika yang asli sudah oke.\n",
+        "4.  Jika teks setelah dibersihkan menjadi sangat kosong, terlalu pendek (kurang dari 5 karakter), atau terlalu generik, barulah buatkan caption baru yang orisinal, menarik, dan sesuai dengan tipe media (video/foto). Jangan bertanya balik.\n",
         "5.  Caption harus singkat, menarik perhatian, dan tidak kaku (robotik).\n",
         f"6.  Tipe media ini adalah: {media_type}.\n",
         "--- Contoh 1 ---",
@@ -47,8 +54,11 @@ def process_caption_with_gemini(raw_caption, media_type="media"):
         "--- Contoh 4 ---",
         "Teks Asli: anjing ini lucu sekali",
         "Output: Gemasnya anjing ini! 😍 #anjinglucu #binatanggemas #videokocak #fyp",
+        "--- Contoh 5 ---",
+        "Teks Asli: (kosong)",
+        "Output: Momen seru yang bikin harimu lebih berwarna! ✨ #hiburan #seru #dailyvlog #kocak #fyp",
         "--- Teks Asli Sekarang ---",
-        raw_caption if raw_caption else "Tidak ada caption. Buatkan yang baru.",
+        input_caption_prompt, # <-- Gunakan variabel baru ini
         "\n--- Output yang Dihasilkan ---"
     ]
     # --- AKHIR PERUBAHAN PROMPT ---
