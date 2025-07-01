@@ -2,8 +2,8 @@ name: AutoPost Facebook Reels via Telegram Input
 
 on:
   schedule:
-    - cron: "0 */6 * * *"  # Jalankan setiap 6 jam
-  workflow_dispatch:        # Izinkan run manual dari GitHub UI
+    - cron: "0 */6 * * *"  # Setiap 6 jam
+  workflow_dispatch:
 
 jobs:
   autopost:
@@ -17,8 +17,15 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
     steps:
-    - name: Checkout code
+    - name: Checkout repo
       uses: actions/checkout@v4
+
+    - name: Restore cache for posted_media.json
+      id: cache-posted
+      uses: actions/cache@v3
+      with:
+        path: posted_media.json
+        key: posted-media-v1
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -35,5 +42,18 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
+    - name: Create empty posted_media.json if not exists
+      run: |
+        if [ ! -f posted_media.json ]; then
+          echo "{}" > posted_media.json
+          echo "✅ created new posted_media.json"
+        else
+          echo "ℹ️ existing posted_media.json preserved"
+        fi
+
     - name: Run AutoPost script
       run: python main.py
+
+    - name: Save updated posted_media.json to cache
+      if: always()
+      run: echo "✅ posted_media.json has been updated."
