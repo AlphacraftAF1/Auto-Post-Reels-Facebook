@@ -24,9 +24,8 @@ def send_message(bot_token, chat_id, text):
 
 def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
     """
-    Mengambil update terbaru dari Telegram, mengunduh media, dan mengembalikan informasinya.
-    Mengabaikan media yang sudah diposting atau duplikat dalam batch yang sama.
-    Prioritas: Media terbaru (update_id tertinggi) akan diproses terlebih dahulu.
+    Mengambil update terbaru dari Telegram dan mengunduh media.
+    Mengembalikan semua media baru yang ditemukan (terurut terbaru ke terlama).
     """
     url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
     params = {
@@ -35,10 +34,9 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
         'timeout': 30 # Timeout untuk permintaan
     }
     
-    new_media_updates = []
+    new_media_updates_list = []
     current_max_offset = last_offset
-    processed_unique_ids_in_batch = set() # Melacak ID unik dalam batch ini untuk menghindari duplikasi
-
+    
     try:
         response = requests.get(url, params=params, timeout=40)
         response.raise_for_status() # Angkat HTTPError untuk kode status 4xx/5xx
@@ -49,7 +47,6 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
             return [], last_offset
 
         # Urutkan update dari yang paling baru ke yang paling lama (reverse=True)
-        # Ini memastikan bahwa media terbaru yang diforward akan diproses duluan
         updates.sort(key=lambda u: u['update_id'], reverse=True)
 
         for update in updates:
@@ -63,11 +60,10 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
                 logging.debug(f"Melewatkan pesan dari chat ID {chat_id} (bukan target {target_chat_id}).")
                 continue
 
-            media_info = None
             file_id = None
             file_unique_id = None
             media_type = None
-            caption = message.get('caption', message.get('text', '')) # Caption untuk foto/video, text untuk pesan biasa
+            caption = message.get('caption', message.get('text', ''))
 
             if 'video' in message:
                 video = message['video']
@@ -79,30 +75,20 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
                 duration = video.get('duration')
                 logging.info(f"Ditemukan video (ID Unik: {file_unique_id})")
             elif 'photo' in message:
-                # Ambil foto dengan resolusi tertinggi
                 photo = message['photo'][-1]
                 file_id = photo['file_id']
                 file_unique_id = photo['file_unique_id']
                 media_type = 'photo'
                 width = photo.get('width')
                 height = photo.get('height')
-                duration = None # Foto tidak memiliki durasi
+                duration = None
                 logging.info(f"Ditemukan foto (ID Unik: {file_unique_id})")
             else:
                 logging.debug(f"Melewatkan pesan tanpa video atau foto (ID Update: {update['update_id']}).")
                 continue
-
-            # Cek apakah media ini sudah diposting sebelumnya (dari file)
-            if file_unique_id in posted_media_ids:
-                logging.info(f"Media (ID Unik: {file_unique_id}) sudah diposting sebelumnya. Melewatkan.")
-                continue
             
-            # Cek apakah media ini sudah diproses dalam batch getUpdates saat ini
-            if file_unique_id in processed_unique_ids_in_batch:
-                logging.info(f"Media (ID Unik: {file_unique_id}) adalah duplikat dalam batch ini. Melewatkan.")
-                continue
-
-            # Unduh media
+            # Unduh media (file_path akan digunakan nanti oleh main.py jika media ini diproses)
+            # Kita unduh di sini agar metadata seperti dimensi bisa langsung didapat
             file_path = download_telegram_file(bot_token, file_id, file_unique_id, media_type)
             if file_path:
                 media_info = {
@@ -116,19 +102,11 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
                     'height': height,
                     'duration': duration
                 }
-                new_media_updates.append(media_info)
-                processed_unique_ids_in_batch.add(file_unique_id) # Tambahkan ke set untuk melacak duplikasi dalam batch
+                new_media_updates_list.append(media_info)
             else:
-                logging.error(f"Gagal mengunduh media {file_unique_id}.")
+                logging.error(f"Gagal mengunduh media {file_unique_id}. Tidak akan ditambahkan ke daftar.")
 
-        # Karena kita ingin memproses media terbaru terlebih dahulu,
-        # dan main.py akan mengambil [:MAX_POSTS_PER_RUN],
-        # kita tidak perlu mengurutkan ulang di sini ke ASC.
-        # Biarkan saja urutan yang sudah terbalik dari update_id DESC.
-        # Atau, jika main.py punya prioritas jenis media, kita bisa mengurutkan di main.py.
-        # Untuk kasus "yang terbaru (paling atas)", urutan DESC ini sudah benar.
-
-        return new_media_updates, current_max_offset
+        return new_media_updates_list, current_max_offset
 
     except requests.exceptions.ConnectionError as e:
         logging.error(f"Kesalahan koneksi saat mengambil update Telegram: {e}")
