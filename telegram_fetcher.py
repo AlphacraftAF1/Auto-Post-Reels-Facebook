@@ -31,7 +31,7 @@ def fetch_new_media(bot_token, target_chat_id, last_offset, posted_media_ids):
     url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
     params = {
         'offset': last_offset + 1, # Mulai dari update setelah yang terakhir diproses
-        'limit': 5, # Ambil hingga 50 update
+        'limit': 10, # Ambil hingga 50 update
         'timeout': 30 # Timeout untuk permintaan
     }
     
