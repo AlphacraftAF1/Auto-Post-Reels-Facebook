@@ -2,16 +2,15 @@
 import os
 import logging
 import time
-# import re # Tidak perlu lagi re di sini karena sudah di handle gemini_processor
-# import random # Tidak perlu lagi random di sini
 
-import asyncio # <-- BARU: Untuk menjalankan fungsi async
+import asyncio # Masih dibutuhkan untuk asyncio.run() di akhir
 
 from telegram_fetcher import get_latest_media_from_bot_chat
 from video_utils import validate_video, get_video_duration
 from facebook_uploader import upload_reel, upload_regular_video, upload_photo
 from telegram_notify import send_telegram
-from gemini_processor import process_caption_with_gemini # <-- BARU: Import Gemini Processor
+from gemini_processor import process_caption_with_gemini # Import tetap sama
+
 
 # Konfigurasi
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -22,10 +21,8 @@ VIDEO_FOLDER = "videos"
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Fungsi clean_caption yang lama akan Dihapus / Diganti
 
-
-async def main_async(): # <-- Ubah main() menjadi async main_async()
+async def main_async(): # Tetap async def karena asyncio.run() di akhir
     if not os.path.exists(VIDEO_FOLDER):
         os.makedirs(VIDEO_FOLDER)
 
@@ -38,6 +35,7 @@ async def main_async(): # <-- Ubah main() menjadi async main_async()
     try:
         # 1. Ambil media terbaru dari bot chat (bisa video atau foto)
         logger.info("Fetching latest media (video/photo) from Telegram chat.")
+        # Mengganti get_latest_video_from_bot_chat menjadi get_latest_media_from_bot_chat
         downloaded_media_path, media_info = get_latest_media_from_bot_chat(BOT_TOKEN, CHAT_ID, VIDEO_FOLDER)
 
         if not downloaded_media_path or not media_info:
@@ -50,7 +48,9 @@ async def main_async(): # <-- Ubah main() menjadi async main_async()
         
         # Panggil Gemini untuk memproses/menghasilkan caption
         logger.info("Calling Gemini to process/generate caption...")
-        processed_caption = await process_caption_with_gemini(raw_caption, media_type=media_type)
+        # --- PERUBAHAN DI SINI: Hapus 'await' ---
+        processed_caption = process_caption_with_gemini(raw_caption, media_type=media_type)
+        # --- AKHIR PERUBAHAN ---
         
         logger.info(f"Media ditemukan: Tipe={media_type}, Keterangan='{raw_caption}' (Gemini Processed: '{processed_caption}')")
         send_telegram(f"📥 Media ditemukan: '{raw_caption}'. Tipe: {media_type}. Sedang diproses dengan Gemini...")
@@ -59,8 +59,6 @@ async def main_async(): # <-- Ubah main() menjadi async main_async()
         upload_success = False
         post_id = None
         
-        # Hashtag sudah di-handle oleh Gemini dalam processed_caption, jadi langsung gunakan itu.
-        # Jika Anda ingin menambahkan hashtag standar *setelah* Gemini, Anda bisa menambahkan di sini.
         final_description = processed_caption 
 
         if media_type == 'video':
