@@ -1,8 +1,8 @@
 # telegram_fetcher.py
 import requests
 import os
-import logging
 import json
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def get_latest_media_from_bot_chat(bot_token, chat_id, download_folder):
 
     try:
         logger.info(f"Mencoba mengambil update Telegram dengan offset: {params['offset']}")
-        response = requests.get(url, params=params, timeout=40) # Tambah timeout request
+        response = requests.get(url, params=params, timeout=40)
         response.raise_for_status()
         updates = response.json().get("result", [])
 
@@ -98,7 +98,7 @@ def get_latest_media_from_bot_chat(bot_token, chat_id, download_folder):
         # Unduh file
         local_file_path = os.path.join(download_folder, f"downloaded_media_{file_unique_id}{file_extension}")
         logger.info(f"Mengunduh media dari: {download_url} ke {local_file_path}")
-        with requests.get(download_url, stream=True, timeout=120) as r: # Tambah timeout download
+        with requests.get(download_url, stream=True, timeout=120) as r:
             r.raise_for_status()
             with open(local_file_path, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192):
@@ -120,15 +120,4 @@ def get_latest_media_from_bot_chat(bot_token, chat_id, download_folder):
         return None, None
 
 if __name__ == "__main__":
-    # Contoh penggunaan (pastikan Anda memiliki token dan chat ID yang valid)
-    # BOT_TOKEN = "YOUR_BOT_TOKEN"
-    # CHAT_ID = "YOUR_CHAT_ID"
-    # DOWNLOAD_FOLDER = "downloads"
-    # if not os.path.exists(DOWNLOAD_FOLDER):
-    #     os.makedirs(DOWNLOAD_FOLDER)
-    # path, info = get_latest_media_from_bot_chat(BOT_TOKEN, CHAT_ID, DOWNLOAD_FOLDER)
-    # if path:
-    #     print(f"Downloaded: {path}, Info: {info}")
-    # else:
-    #     print("No new media.")
     pass
