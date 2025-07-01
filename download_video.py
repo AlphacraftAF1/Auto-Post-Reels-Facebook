@@ -21,6 +21,7 @@ def download_youtube_shorts(keyword, output_path="videos"):
         # 'extract_flat': 'in_playlist', # Menonaktifkan ini untuk mendapatkan info lebih lengkap termasuk URL
         'default_search': 'ytsearch10:', # Cari 10 hasil teratas
         'geo_bypass': True,
+        'cookiefile': '.private/cookies.txt',
         'skip_download': True, # Hanya dapatkan info, jangan download
         'force_generic_extractor': True,
         'dump_single_json': True, # Mencetak metadata sebagai JSON
