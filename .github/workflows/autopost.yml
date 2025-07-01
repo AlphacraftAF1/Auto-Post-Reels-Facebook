@@ -16,7 +16,7 @@ jobs:
     - name: Set up Python # Mengatur lingkungan Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.9' # Menentukan versi Python yang akan digunakan
+        python-version: '3.10' # Menentukan versi Python yang akan digunakan
 
     - name: Install dependencies # Menginstal dependensi Python dari requirements.txt
       run: |
