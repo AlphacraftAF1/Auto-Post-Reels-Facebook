@@ -14,6 +14,8 @@ jobs:
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.REPO_ACCESS_TOKEN }} 
+        # Penting: Fetch full history untuk rebase
+        fetch-depth: 0 
 
     - name: Set up Python # Mengatur lingkungan Python
       uses: actions/setup-python@v5
@@ -35,7 +37,7 @@ jobs:
         touch last_update_offset.txt # Buat file kosong jika belum ada
         touch pending_media.json # Pastikan pending_media.json juga ada
 
-    - name: List files before script # Menampilkan daftar file sebelum main.py berjalan
+    - name: Debug: List files before script # Menampilkan daftar file sebelum main.py berjalan
       run: |
         echo "Files before main.py runs:"
         ls -la
@@ -50,7 +52,7 @@ jobs:
       run: |
         python main.py
 
-    - name: List files after script # Menampilkan daftar file setelah main.py selesai
+    - name: Debug: List files after script # Menampilkan daftar file setelah main.py selesai
       run: |
         echo "Files after main.py runs:"
         ls -la
@@ -61,6 +63,8 @@ jobs:
         git config user.email "actions@github.com"
         git add posted_media.json last_update_offset.txt pending_media.json
         git commit -m "AutoPost: Update posted media, offset, and pending queue" || true 
+        # PENTING: Lakukan pull sebelum push untuk menghindari rejected updates
+        git pull --rebase origin main 
         git push
       env:
         GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }} 
