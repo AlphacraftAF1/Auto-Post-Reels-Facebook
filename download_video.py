@@ -12,16 +12,18 @@ def download_youtube_shorts(keyword, output_path="videos"):
         os.makedirs(output_path)
 
     # Opsi untuk mencari video (tanpa download dulu)
+    # Kita akan mencoba untuk mendapatkan URL dengan lebih pasti di sini
     search_ydl_opts = {
         'format': 'mp4',
         'paths': {'home': output_path},
         'noplaylist': True,
         'quiet': True,
-        'extract_flat': 'in_playlist', # Hanya ekstrak URL dari playlist
+        # 'extract_flat': 'in_playlist', # Menonaktifkan ini untuk mendapatkan info lebih lengkap termasuk URL
         'default_search': 'ytsearch10:', # Cari 10 hasil teratas
         'geo_bypass': True,
         'skip_download': True, # Hanya dapatkan info, jangan download
-        'force_generic_extractor': True, # Coba ekstraktor generik jika ekstrak spesifik gagal
+        'force_generic_extractor': True,
+        'dump_single_json': True, # Mencetak metadata sebagai JSON
     }
 
     video_url = None
@@ -29,30 +31,33 @@ def download_youtube_shorts(keyword, output_path="videos"):
 
     try:
         # Mencari video dan mendapatkan URL
-        # Menambahkan "shorts" secara eksplisit ke query
         search_query = f"{keyword} shorts"
         print(f"Mencari YouTube Shorts dengan query: '{search_query}'")
+        
         with yt_dlp.YoutubeDL(search_ydl_opts) as ydl:
+            # Karena 'extract_flat' dinonaktifkan, ini akan mengunduh metadata lengkap
+            # untuk setiap entri, yang akan mencakup 'webpage_url'
             search_results = ydl.extract_info(search_query, download=False)
             
             if 'entries' in search_results and search_results['entries']:
                 print(f"Ditemukan {len(search_results['entries'])} hasil pencarian awal.")
                 for entry in search_results['entries']:
-                    if entry and entry.get('duration') is not None:
+                    if entry and entry.get('duration') is not None and entry.get('webpage_url'):
                         duration = entry['duration']
-                        # Coba toleransi durasi sedikit lebih tinggi, misal 65 detik untuk shorts
-                        # Atau fokus pada video yang secara eksplisit ditandai sebagai shorts jika memungkinkan
-                        print(f"  - Video: {entry.get('title', 'N/A')}, Durasi: {duration}s, URL: {entry.get('webpage_url', 'N/A')}")
+                        url = entry['webpage_url']
+                        print(f"  - Video: {entry.get('title', 'N/A')}, Durasi: {duration}s, URL: {url}")
+                        
+                        # Filter durasi
                         if duration <= 65: # Toleransi durasi sedikit lebih tinggi
-                            video_url = entry.get('webpage_url')
+                            video_url = url
                             video_info = entry
                             print(f"  -> Memilih video ini sebagai Shorts yang cocok.")
                             break # Ambil video shorts pertama yang ditemukan yang memenuhi kriteria
                     else:
-                        print(f"  - Melewati entri tanpa durasi atau tidak valid: {entry.get('title', 'N/A')}")
+                        print(f"  - Melewati entri tanpa durasi, URL, atau tidak valid: {entry.get('title', 'N/A')}")
 
         if not video_url:
-            print(f"Tidak ditemukan video shorts yang cocok untuk keyword: {keyword} setelah filtering.")
+            print(f"Tidak ditemukan video shorts yang cocok (URL valid, durasi <=65s) untuk keyword: {keyword} setelah filtering.")
             return None, None
 
         # Opsi untuk mendownload video yang ditemukan
@@ -68,8 +73,9 @@ def download_youtube_shorts(keyword, output_path="videos"):
             'fragment_retries': 3,
         }
         
-        print(f"Mulai mendownload video: {video_url}")
+        print(f"Mulai mendownload video dari URL: {video_url}")
         with yt_dlp.YoutubeDL(download_ydl_opts) as ydl:
+            # Mengunduh video menggunakan URL yang sudah didapat
             info_dict = ydl.extract_info(video_url, download=True)
             video_id = info_dict.get('id')
             video_ext = info_dict.get('ext', 'mp4')
