@@ -1,10 +1,10 @@
 # .github/workflows/autopost.yml
-name: AutoPost Facebook Reels
+name: AutoPost Facebook Reels via Telegram Input
 
 on:
   schedule:
-    - cron: "0 */6 * * *" # Jalankan setiap 6 jam
-  workflow_dispatch: # Memungkinkan trigger manual
+    - cron: "0 */6 * * *" # Jalankan setiap 6 jam. Ubah menjadi "0 */24 * * *" untuk 1 hari sekali.
+  workflow_dispatch: # Memungkinkan trigger manual dari GitHub UI
 
 jobs:
   autopost:
@@ -14,7 +14,7 @@ jobs:
       FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
       FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }} # CHAT_ID yang Anda gunakan untuk mengirim video ke bot
 
     steps:
     - name: Checkout code
