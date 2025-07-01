@@ -117,17 +117,23 @@ def run_autopost():
 
         logging.info(f"Ditemukan {len(new_media_updates)} media baru yang potensial untuk diproses.")
         
-        # --- Prioritaskan Foto sebelum Video ---
-        # Urutkan media agar foto diproses terlebih dahulu, kemudian video.
-        # Jika ada video yang merupakan Reels, bisa diberi prioritas lebih tinggi dari video reguler.
-        # Catatan: Jika Anda ingin memproses media terbaru (berdasarkan update_id) secara mutlak,
-        # dan MAX_POSTS_PER_RUN = 1, Anda bisa menghapus bagian pengurutan ini.
-        # Namun, jika MAX_POSTS_PER_RUN > 1 dan Anda ingin prioritas jenis media, pertahankan ini.
+        # --- OPSI PENGURUTAN MEDIA ---
+        # Pilih salah satu dari dua opsi di bawah, atau hapus keduanya jika Anda ingin
+        # memproses media sesuai urutan yang dikembalikan oleh Telegram_fetcher (terbaru ke terlama).
+
+        # OPSI 1: Prioritaskan Foto, lalu Reels, lalu Video Reguler (seperti sebelumnya)
+        # Ini akan mengurutkan ulang media yang baru ditemukan berdasarkan jenisnya.
+        # Jika MAX_POSTS_PER_RUN = 1, ini akan memproses foto terbaru terlebih dahulu.
         new_media_updates.sort(key=lambda x: (
             0 if x['type'] == 'photo' else # Foto memiliki prioritas tertinggi (0)
             1 if x['type'] == 'video' and video_utils.is_reel(x['file_path']) else # Reels (video) prioritas kedua (1)
             2 # Video reguler prioritas terendah (2)
         ))
+
+        # OPSI 2 (Alternatif): Jika Anda ingin memproses media yang *paling baru* dari Telegram
+        # secara mutlak (berdasarkan update_id), tanpa memandang jenisnya, dan MAX_POSTS_PER_RUN = 1,
+        # maka HAPUS blok OPSI 1 di atas. Telegram_fetcher sudah mengembalikan media terbaru duluan.
+        # new_media_updates = new_media_updates # Tidak perlu pengurutan tambahan jika telegram_fetcher sudah mengurutkan DESC
 
         # Batasi jumlah media yang akan diproses per run
         media_to_process = new_media_updates[:MAX_POSTS_PER_RUN]
